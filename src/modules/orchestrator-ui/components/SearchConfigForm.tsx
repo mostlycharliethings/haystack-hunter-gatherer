@@ -9,6 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Lightbulb, Loader2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const searchConfigSchema = z.object({
   brand: z.string().min(1, "Brand is required"),
@@ -33,6 +36,8 @@ interface SearchConfigFormProps {
 export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProps) {
   const { toast } = useToast();
   const [priceMultiplier, setPriceMultiplier] = useState(initialData?.priceMultiplier || 1);
+  const [isGettingPriceSuggestions, setIsGettingPriceSuggestions] = useState(false);
+  const [priceSuggestions, setPriceSuggestions] = useState<any>(null);
 
   const form = useForm<SearchConfigFormData>({
     resolver: zodResolver(searchConfigSchema),
@@ -71,6 +76,65 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
   };
 
   const calculatedMaxPrice = Math.round(form.watch("priceThreshold") * priceMultiplier);
+
+  const getPriceSuggestions = async () => {
+    const currentValues = form.getValues();
+    
+    if (!currentValues.brand || !currentValues.model) {
+      toast({
+        title: "Missing Information",
+        description: "Please enter at least a brand and model to get price suggestions.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGettingPriceSuggestions(true);
+    setPriceSuggestions(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('price-suggester', {
+        body: {
+          brand: currentValues.brand,
+          model: currentValues.model,
+          qualifier: currentValues.qualifier || undefined,
+          sub_qualifier: currentValues.subQualifier || undefined,
+          year_start: currentValues.yearStart ? parseInt(currentValues.yearStart) : undefined,
+          year_end: currentValues.yearEnd ? parseInt(currentValues.yearEnd) : undefined,
+          location: currentValues.location || undefined,
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setPriceSuggestions(data);
+      toast({
+        title: "Price Suggestions Ready",
+        description: "AI-powered price recommendations have been generated!",
+      });
+    } catch (error) {
+      console.error('Error getting price suggestions:', error);
+      toast({
+        title: "Error",
+        description: "Failed to get price suggestions. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGettingPriceSuggestions(false);
+    }
+  };
+
+  const applyPriceSuggestion = (threshold: number, multiplier: number) => {
+    form.setValue("priceThreshold", threshold);
+    form.setValue("priceMultiplier", multiplier);
+    setPriceMultiplier(multiplier);
+    toast({
+      title: "Price Settings Applied",
+      description: `Set threshold to $${threshold.toLocaleString()} with ${multiplier}x multiplier`,
+    });
+  };
 
   return (
     <Card className="w-full max-w-2xl">
@@ -214,7 +278,122 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
                   Max price: ${calculatedMaxPrice.toLocaleString()}
                 </p>
               </div>
+
+              {/* Price Suggestions Button */}
+              <div className="flex justify-center pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={getPriceSuggestions}
+                  disabled={isGettingPriceSuggestions}
+                  className="flex items-center gap-2"
+                >
+                  {isGettingPriceSuggestions ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Lightbulb className="h-4 w-4" />
+                  )}
+                  {isGettingPriceSuggestions ? "Getting Price Suggestions..." : "Help Me Find a Price"}
+                </Button>
+              </div>
             </div>
+
+            {/* Price Suggestions Display */}
+            {priceSuggestions && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <Lightbulb className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-semibold text-sm mb-2">
+                        AI Price Analysis for {priceSuggestions.vehicle_description} ({priceSuggestions.year_range})
+                      </h4>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        {priceSuggestions.market_analysis}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <Card className="p-3 border-green-200 bg-green-50">
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-green-700">
+                            ${priceSuggestions.conservative_threshold?.toLocaleString()}
+                          </div>
+                          <div className="text-xs text-green-600 mb-2">Conservative</div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => applyPriceSuggestion(
+                              priceSuggestions.conservative_threshold,
+                              priceSuggestions.multiplier_suggestion
+                            )}
+                            className="text-xs h-7"
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                      </Card>
+
+                      <Card className="p-3 border-blue-200 bg-blue-50">
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-blue-700">
+                            ${priceSuggestions.suggested_threshold?.toLocaleString()}
+                          </div>
+                          <div className="text-xs text-blue-600 mb-2">Recommended</div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => applyPriceSuggestion(
+                              priceSuggestions.suggested_threshold,
+                              priceSuggestions.multiplier_suggestion
+                            )}
+                            className="text-xs h-7"
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                      </Card>
+
+                      <Card className="p-3 border-orange-200 bg-orange-50">
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-orange-700">
+                            ${priceSuggestions.aggressive_threshold?.toLocaleString()}
+                          </div>
+                          <div className="text-xs text-orange-600 mb-2">Aggressive</div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => applyPriceSuggestion(
+                              priceSuggestions.aggressive_threshold,
+                              priceSuggestions.multiplier_suggestion
+                            )}
+                            className="text-xs h-7"
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                      </Card>
+                    </div>
+
+                    <div className="text-xs text-muted-foreground">
+                      <div className="mb-1">
+                        <strong>Market Range:</strong> ${priceSuggestions.price_range?.low?.toLocaleString()} - ${priceSuggestions.price_range?.high?.toLocaleString()} 
+                        (avg: ${priceSuggestions.price_range?.average?.toLocaleString()})
+                      </div>
+                      <div className="mb-1">
+                        <strong>Recommended Multiplier:</strong> {priceSuggestions.multiplier_suggestion}x
+                      </div>
+                      <div>
+                        <strong>Reasoning:</strong> {priceSuggestions.reasoning}
+                      </div>
+                    </div>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
 
             {/* Location Override */}
             <FormField
