@@ -53,6 +53,7 @@ export function OrchestratorPage() {
           price_multiplier: data.priceMultiplier,
           location: data.location,
           email: data.email,
+          is_active: true,
         });
       }
     } catch (error) {

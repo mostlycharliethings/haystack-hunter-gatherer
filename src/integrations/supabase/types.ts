@@ -14,7 +14,110 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      listings: {
+        Row: {
+          discovered_at: string
+          distance: number | null
+          id: string
+          image_url: string | null
+          location: string
+          posted_at: string
+          price: number
+          search_config_id: string
+          source: string
+          tier: number
+          title: string
+          url: string
+        }
+        Insert: {
+          discovered_at?: string
+          distance?: number | null
+          id?: string
+          image_url?: string | null
+          location: string
+          posted_at: string
+          price: number
+          search_config_id: string
+          source: string
+          tier?: number
+          title: string
+          url: string
+        }
+        Update: {
+          discovered_at?: string
+          distance?: number | null
+          id?: string
+          image_url?: string | null
+          location?: string
+          posted_at?: string
+          price?: number
+          search_config_id?: string
+          source?: string
+          tier?: number
+          title?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listings_search_config_id_fkey"
+            columns: ["search_config_id"]
+            isOneToOne: false
+            referencedRelation: "search_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      search_configs: {
+        Row: {
+          brand: string
+          created_at: string
+          email: string
+          id: string
+          is_active: boolean
+          location: string
+          model: string
+          price_multiplier: number
+          price_threshold: number
+          qualifier: string | null
+          sub_qualifier: string | null
+          updated_at: string
+          year_end: number | null
+          year_start: number | null
+        }
+        Insert: {
+          brand: string
+          created_at?: string
+          email: string
+          id?: string
+          is_active?: boolean
+          location: string
+          model: string
+          price_multiplier?: number
+          price_threshold: number
+          qualifier?: string | null
+          sub_qualifier?: string | null
+          updated_at?: string
+          year_end?: number | null
+          year_start?: number | null
+        }
+        Update: {
+          brand?: string
+          created_at?: string
+          email?: string
+          id?: string
+          is_active?: boolean
+          location?: string
+          model?: string
+          price_multiplier?: number
+          price_threshold?: number
+          qualifier?: string | null
+          sub_qualifier?: string | null
+          updated_at?: string
+          year_end?: number | null
+          year_start?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
