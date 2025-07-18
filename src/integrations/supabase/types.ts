@@ -118,6 +118,124 @@ export type Database = {
         }
         Relationships: []
       }
+      secondary_sources: {
+        Row: {
+          context_type: string | null
+          discovered_at: string
+          distance: number | null
+          id: string
+          image_url: string | null
+          location: string
+          posted_at: string
+          price: number
+          relevance_score: number | null
+          search_config_id: string
+          source: string
+          tier: number
+          title: string
+          url: string
+        }
+        Insert: {
+          context_type?: string | null
+          discovered_at?: string
+          distance?: number | null
+          id?: string
+          image_url?: string | null
+          location: string
+          posted_at: string
+          price: number
+          relevance_score?: number | null
+          search_config_id: string
+          source: string
+          tier?: number
+          title: string
+          url: string
+        }
+        Update: {
+          context_type?: string | null
+          discovered_at?: string
+          distance?: number | null
+          id?: string
+          image_url?: string | null
+          location?: string
+          posted_at?: string
+          price?: number
+          relevance_score?: number | null
+          search_config_id?: string
+          source?: string
+          tier?: number
+          title?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "secondary_sources_search_config_id_fkey"
+            columns: ["search_config_id"]
+            isOneToOne: false
+            referencedRelation: "search_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tertiary_sources: {
+        Row: {
+          discovered_at: string
+          discovery_type: string | null
+          distance: number | null
+          id: string
+          image_url: string | null
+          location: string
+          posted_at: string
+          price: number
+          relevance_score: number | null
+          search_config_id: string
+          source: string
+          tier: number
+          title: string
+          url: string
+        }
+        Insert: {
+          discovered_at?: string
+          discovery_type?: string | null
+          distance?: number | null
+          id?: string
+          image_url?: string | null
+          location: string
+          posted_at: string
+          price: number
+          relevance_score?: number | null
+          search_config_id: string
+          source: string
+          tier?: number
+          title: string
+          url: string
+        }
+        Update: {
+          discovered_at?: string
+          discovery_type?: string | null
+          distance?: number | null
+          id?: string
+          image_url?: string | null
+          location?: string
+          posted_at?: string
+          price?: number
+          relevance_score?: number | null
+          search_config_id?: string
+          source?: string
+          tier?: number
+          title?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tertiary_sources_search_config_id_fkey"
+            columns: ["search_config_id"]
+            isOneToOne: false
+            referencedRelation: "search_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
