@@ -153,7 +153,7 @@ export function OrchestratorPage() {
                 <div>
                   <h2 className="text-xl font-semibold">Build Your Haystack</h2>
                   <p className="text-muted-foreground mt-1">
-                    Configure your automated search criteria for vehicle listings.
+                    Configure what you want me to search for
                   </p>
                 </div>
                 <LocationDisplay />
