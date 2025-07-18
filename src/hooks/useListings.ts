@@ -1,8 +1,20 @@
 import { useState, useEffect } from 'react';
-import { supabase, type Database } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
-type Listing = Database['public']['Tables']['listings']['Row'] & {
+type Listing = {
+  id: string;
+  title: string;
+  price: number;
+  location: string;
+  distance: number | null;
+  source: string;
+  tier: number;
+  url: string;
+  image_url: string | null;
+  posted_at: string;
+  discovered_at: string;
+  search_config_id: string;
   searchConfigName?: string;
 };
 

@@ -1,10 +1,32 @@
 import { useState, useEffect } from 'react';
-import { supabase, type Database } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
-type SearchConfig = Database['public']['Tables']['search_configs']['Row'];
-type InsertSearchConfig = Database['public']['Tables']['search_configs']['Insert'];
-type UpdateSearchConfig = Database['public']['Tables']['search_configs']['Update'];
+type SearchConfig = {
+  id: string;
+  brand: string;
+  model: string;
+  qualifier: string | null;
+  sub_qualifier: string | null;
+  year_start: number | null;
+  year_end: number | null;
+  price_threshold: number;
+  price_multiplier: number;
+  location: string;
+  email: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type InsertSearchConfig = Omit<SearchConfig, 'id' | 'created_at' | 'updated_at'> & {
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+  is_active?: boolean;
+};
+
+type UpdateSearchConfig = Partial<SearchConfig>;
 
 export function useSearchConfigs() {
   const [configs, setConfigs] = useState<SearchConfig[]>([]);
