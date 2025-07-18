@@ -424,7 +424,7 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
             />
 
             <Button type="submit" className="w-full">
-              Save Search Configuration
+              Feed Me Haystacks!
             </Button>
           </form>
         </Form>
