@@ -159,7 +159,7 @@ export function OrchestratorPage() {
                 <LocationDisplay />
               </div>
             </div>
-            <div className="p-6">
+            <div className="p-6 flex justify-center">
               <SearchConfigForm 
                 onSubmit={handleConfigSubmit}
                 initialData={editingConfig}
