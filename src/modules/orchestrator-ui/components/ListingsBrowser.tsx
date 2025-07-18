@@ -22,12 +22,13 @@ interface Listing {
 
 interface ListingsBrowserProps {
   listings: Listing[];
+  loading?: boolean;
   onListingClick: (listing: Listing) => void;
 }
 
 type SortOption = "price-asc" | "price-desc" | "distance-asc" | "distance-desc" | "tier-asc" | "posted-desc";
 
-export function ListingsBrowser({ listings, onListingClick }: ListingsBrowserProps) {
+export function ListingsBrowser({ listings, loading, onListingClick }: ListingsBrowserProps) {
   const [sortBy, setSortBy] = useState<SortOption>("posted-desc");
   const [filterTier, setFilterTier] = useState<string>("all");
 
@@ -117,7 +118,13 @@ export function ListingsBrowser({ listings, onListingClick }: ListingsBrowserPro
       </div>
 
       {/* Listings Grid */}
-      {sortedAndFilteredListings.length === 0 ? (
+      {loading ? (
+        <Card>
+          <CardContent className="flex items-center justify-center py-8">
+            <p className="text-muted-foreground">Loading listings...</p>
+          </CardContent>
+        </Card>
+      ) : sortedAndFilteredListings.length === 0 ? (
         <Card>
           <CardContent className="flex items-center justify-center py-8">
             <p className="text-muted-foreground">No listings found matching your criteria.</p>

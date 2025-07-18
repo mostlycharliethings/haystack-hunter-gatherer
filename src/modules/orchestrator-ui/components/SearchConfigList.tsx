@@ -23,12 +23,13 @@ interface SearchConfig {
 
 interface SearchConfigListProps {
   configs: SearchConfig[];
+  loading?: boolean;
   onEdit: (config: SearchConfig) => void;
   onDelete: (id: string) => void;
   onToggleActive: (id: string, isActive: boolean) => void;
 }
 
-export function SearchConfigList({ configs, onEdit, onDelete, onToggleActive }: SearchConfigListProps) {
+export function SearchConfigList({ configs, loading, onEdit, onDelete, onToggleActive }: SearchConfigListProps) {
   const formatSearchTerm = (config: SearchConfig) => {
     const parts = [config.brand, config.model];
     if (config.qualifier) parts.push(config.qualifier);
@@ -61,7 +62,13 @@ export function SearchConfigList({ configs, onEdit, onDelete, onToggleActive }: 
         <Badge variant="secondary">{configs.length} configurations</Badge>
       </div>
       
-      {configs.length === 0 ? (
+      {loading ? (
+        <Card>
+          <CardContent className="flex items-center justify-center py-8">
+            <p className="text-muted-foreground">Loading configurations...</p>
+          </CardContent>
+        </Card>
+      ) : configs.length === 0 ? (
         <Card>
           <CardContent className="flex items-center justify-center py-8">
             <p className="text-muted-foreground">No search configurations yet. Create your first one above!</p>

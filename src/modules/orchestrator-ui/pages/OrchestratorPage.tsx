@@ -3,139 +3,95 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SearchConfigForm } from "../components/SearchConfigForm";
 import { SearchConfigList } from "../components/SearchConfigList";
 import { ListingsBrowser } from "../components/ListingsBrowser";
-import { useToast } from "@/hooks/use-toast";
-
-// Mock data - will be replaced with Supabase integration
-const mockConfigs = [
-  {
-    id: "1",
-    brand: "Honda",
-    model: "Civic",
-    qualifier: "Sport",
-    subQualifier: "Manual",
-    yearStart: "2018",
-    yearEnd: "2023",
-    priceThreshold: 15000,
-    priceMultiplier: 1.5,
-    location: "Denver, CO",
-    email: "user@example.com",
-    isActive: true,
-    createdAt: "2024-01-15T10:00:00Z",
-    lastRun: "2024-01-20T14:30:00Z",
-    listingCount: 12,
-  },
-  {
-    id: "2", 
-    brand: "Canon",
-    model: "EOS R5",
-    priceThreshold: 2500,
-    priceMultiplier: 1.2,
-    email: "user@example.com",
-    isActive: false,
-    createdAt: "2024-01-10T09:00:00Z",
-    listingCount: 3,
-  },
-];
-
-const mockListings = [
-  {
-    id: "1",
-    title: "2020 Honda Civic Sport Manual - Excellent Condition",
-    price: 18500,
-    location: "Denver, CO",
-    distance: 15,
-    source: "Facebook Marketplace",
-    tier: 1 as const,
-    url: "https://facebook.com/marketplace/item/123",
-    imageUrl: "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=400",
-    postedAt: "2024-01-20T08:00:00Z",
-    searchConfigId: "1",
-    searchConfigName: "Honda Civic Sport Manual",
-  },
-  {
-    id: "2",
-    title: "Honda Civic Sport 2019 - Low Miles",
-    price: 16900,
-    location: "Boulder, CO",
-    distance: 45,
-    source: "Craigslist Denver",
-    tier: 1 as const,
-    url: "https://denver.craigslist.org/cto/123.html",
-    postedAt: "2024-01-19T15:30:00Z",
-    searchConfigId: "1",
-    searchConfigName: "Honda Civic Sport Manual",
-  },
-  {
-    id: "3",
-    title: "Canon EOS R5 Body Only - Like New",
-    price: 2800,
-    location: "Colorado Springs, CO",
-    distance: 85,
-    source: "Photography Forum",
-    tier: 2 as const,
-    url: "https://photoforum.com/listing/456",
-    postedAt: "2024-01-18T12:00:00Z",
-    searchConfigId: "2",
-    searchConfigName: "Canon EOS R5",
-  },
-];
+import { useSearchConfigs } from "@/hooks/useSearchConfigs";
+import { useListings } from "@/hooks/useListings";
 
 export function OrchestratorPage() {
-  const { toast } = useToast();
-  const [configs, setConfigs] = useState(mockConfigs);
-  const [listings] = useState(mockListings);
+  const { 
+    configs, 
+    loading: configsLoading, 
+    createConfig, 
+    updateConfig, 
+    deleteConfig, 
+    toggleActive 
+  } = useSearchConfigs();
+  
+  const { 
+    listings, 
+    loading: listingsLoading 
+  } = useListings();
+  
   const [editingConfig, setEditingConfig] = useState<any>(null);
 
-  const handleConfigSubmit = (data: any) => {
-    if (editingConfig) {
-      // Update existing config
-      setConfigs(prev => prev.map(config => 
-        config.id === editingConfig.id 
-          ? { ...config, ...data }
-          : config
-      ));
-      setEditingConfig(null);
-      toast({
-        title: "Configuration Updated",
-        description: "Search configuration has been updated successfully.",
-      });
-    } else {
-      // Create new config
-      const newConfig = {
-        ...data,
-        id: Date.now().toString(),
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        listingCount: 0,
-      };
-      setConfigs(prev => [...prev, newConfig]);
-      toast({
-        title: "Configuration Created", 
-        description: "New search configuration has been created successfully.",
-      });
+  const handleConfigSubmit = async (data: any) => {
+    try {
+      if (editingConfig) {
+        // Update existing config
+        await updateConfig(editingConfig.id, {
+          brand: data.brand,
+          model: data.model,
+          qualifier: data.qualifier || null,
+          sub_qualifier: data.subQualifier || null,
+          year_start: data.yearStart ? parseInt(data.yearStart) : null,
+          year_end: data.yearEnd ? parseInt(data.yearEnd) : null,
+          price_threshold: data.priceThreshold,
+          price_multiplier: data.priceMultiplier,
+          location: data.location,
+          email: data.email,
+        });
+        setEditingConfig(null);
+      } else {
+        // Create new config
+        await createConfig({
+          brand: data.brand,
+          model: data.model,
+          qualifier: data.qualifier || null,
+          sub_qualifier: data.subQualifier || null,
+          year_start: data.yearStart ? parseInt(data.yearStart) : null,
+          year_end: data.yearEnd ? parseInt(data.yearEnd) : null,
+          price_threshold: data.priceThreshold,
+          price_multiplier: data.priceMultiplier,
+          location: data.location,
+          email: data.email,
+        });
+      }
+    } catch (error) {
+      // Error handling is done in the hooks
+      console.error('Error submitting config:', error);
     }
   };
 
   const handleConfigEdit = (config: any) => {
-    setEditingConfig(config);
+    // Transform database config to form format
+    const formConfig = {
+      brand: config.brand,
+      model: config.model,
+      qualifier: config.qualifier || '',
+      subQualifier: config.sub_qualifier || '',
+      yearStart: config.year_start?.toString() || '',
+      yearEnd: config.year_end?.toString() || '',
+      priceThreshold: config.price_threshold,
+      priceMultiplier: config.price_multiplier,
+      location: config.location,
+      email: config.email,
+    };
+    setEditingConfig({ ...config, ...formConfig });
   };
 
-  const handleConfigDelete = (id: string) => {
-    setConfigs(prev => prev.filter(config => config.id !== id));
-    toast({
-      title: "Configuration Deleted",
-      description: "Search configuration has been deleted.",
-    });
+  const handleConfigDelete = async (id: string) => {
+    try {
+      await deleteConfig(id);
+    } catch (error) {
+      console.error('Error deleting config:', error);
+    }
   };
 
-  const handleToggleActive = (id: string, isActive: boolean) => {
-    setConfigs(prev => prev.map(config =>
-      config.id === id ? { ...config, isActive } : config
-    ));
-    toast({
-      title: isActive ? "Search Resumed" : "Search Paused",
-      description: `Search configuration has been ${isActive ? "resumed" : "paused"}.`,
-    });
+  const handleToggleActive = async (id: string, isActive: boolean) => {
+    try {
+      await toggleActive(id, isActive);
+    } catch (error) {
+      console.error('Error toggling config:', error);
+    }
   };
 
   const handleListingClick = (listing: any) => {
@@ -186,7 +142,23 @@ export function OrchestratorPage() {
 
         <TabsContent value="searches" className="space-y-6">
           <SearchConfigList
-            configs={configs}
+            configs={configs.map(config => ({
+              id: config.id,
+              brand: config.brand,
+              model: config.model,
+              qualifier: config.qualifier || undefined,
+              subQualifier: config.sub_qualifier || undefined,
+              yearStart: config.year_start?.toString(),
+              yearEnd: config.year_end?.toString(),
+              priceThreshold: config.price_threshold,
+              priceMultiplier: config.price_multiplier,
+              location: config.location,
+              isActive: config.is_active,
+              createdAt: config.created_at,
+              lastRun: config.updated_at,
+              listingCount: 0, // TODO: Add actual count from listings
+            }))}
+            loading={configsLoading}
             onEdit={handleConfigEdit}
             onDelete={handleConfigDelete}
             onToggleActive={handleToggleActive}
@@ -195,7 +167,21 @@ export function OrchestratorPage() {
 
         <TabsContent value="listings" className="space-y-6">
           <ListingsBrowser
-            listings={listings}
+            listings={listings.map(listing => ({
+              id: listing.id,
+              title: listing.title,
+              price: listing.price,
+              location: listing.location,
+              distance: listing.distance || 0,
+              source: listing.source,
+              tier: listing.tier as 1 | 2 | 3,
+              url: listing.url,
+              imageUrl: listing.image_url || undefined,
+              postedAt: listing.posted_at,
+              searchConfigId: listing.search_config_id,
+              searchConfigName: listing.searchConfigName || '',
+            }))}
+            loading={listingsLoading}
             onListingClick={handleListingClick}
           />
         </TabsContent>
