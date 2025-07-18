@@ -77,11 +77,11 @@ export const AdminDashboard = () => {
   ]);
 
   const [logs] = useState([
-    { id: 1, timestamp: '2024-01-18 14:30:22', module: 'Primary Search', level: 'INFO', message: 'Successfully processed 142 listings' },
-    { id: 2, timestamp: '2024-01-18 14:25:15', module: 'Notifier', level: 'SUCCESS', message: 'Email sent to user@example.com' },
-    { id: 3, timestamp: '2024-01-18 14:20:08', module: 'Price Suggester', level: 'INFO', message: 'Generated suggestions for BMW 3 Series' },
-    { id: 4, timestamp: '2024-01-18 14:15:33', module: 'Extended Search', level: 'WARNING', message: 'Rate limit exceeded, retrying in 60s' },
-    { id: 5, timestamp: '2024-01-18 14:10:45', module: 'Discovery Crawler', level: 'ERROR', message: 'Failed to connect to source: marketplace.example.com' },
+    { id: 1, timestamp: '2024-01-18 14:30:22', module: 'Primary Search', level: 'INFO', message: 'Successfully processed 142 listings from AutoTrader and Cars.com' },
+    { id: 2, timestamp: '2024-01-18 14:25:15', module: 'Notifier', level: 'SUCCESS', message: 'Email sent to hello@foxtonsolutionsgroup.com' },
+    { id: 3, timestamp: '2024-01-18 14:20:08', module: 'Price Suggester', level: 'INFO', message: 'Generated price suggestions for BMW 3 Series based on market analysis' },
+    { id: 4, timestamp: '2024-01-18 14:15:33', module: 'Extended Search', level: 'INFO', message: 'Triggered secondary source search for new SearchSpec: Honda Civic 2020-2023' },
+    { id: 5, timestamp: '2024-01-18 14:10:45', module: 'Discovery Crawler', level: 'INFO', message: 'Found 3 new community sources: craigslist.org/seattle, facebook.com/marketplace, nextdoor.com' },
   ]);
 
   const toggleModule = (moduleName: string) => {
