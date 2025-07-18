@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useSearchConfigs } from '@/hooks/useSearchConfigs';
 import { useListings } from '@/hooks/useListings';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ModuleStatus {
   name: string;
@@ -25,6 +26,14 @@ interface ModuleStatus {
   lastRun?: string;
   successRate: number;
   description: string;
+}
+
+interface LogEntry {
+  id: string;
+  timestamp: string;
+  module: string;
+  level: string;
+  message: string;
 }
 
 export const AdminDashboard = () => {
@@ -35,54 +44,102 @@ export const AdminDashboard = () => {
     {
       name: 'Primary Search',
       enabled: true,
-      lastRun: '2 minutes ago',
-      successRate: 94.2,
+      lastRun: undefined,
+      successRate: 0,
       description: 'Main search crawler for marketplace listings'
     },
     {
       name: 'Extended Search',
       enabled: true,
-      lastRun: '5 minutes ago',
-      successRate: 87.5,
+      lastRun: undefined,
+      successRate: 0,
       description: 'Secondary search with expanded parameters'
     },
     {
       name: 'Discovery Crawler',
       enabled: true,
-      lastRun: '1 hour ago',
-      successRate: 91.8,
+      lastRun: undefined,
+      successRate: 0,
       description: 'New source discovery and validation'
     },
     {
       name: 'Contextual Finder',
       enabled: false,
-      lastRun: '3 hours ago',
-      successRate: 78.3,
+      lastRun: undefined,
+      successRate: 0,
       description: 'AI-powered contextual search refinement'
     },
     {
       name: 'Price Suggester',
       enabled: true,
-      lastRun: '30 minutes ago',
-      successRate: 96.1,
+      lastRun: undefined,
+      successRate: 0,
       description: 'Dynamic price threshold recommendations'
     },
     {
       name: 'Notifier',
       enabled: true,
-      lastRun: '10 minutes ago',
-      successRate: 99.2,
+      lastRun: undefined,
+      successRate: 0,
       description: 'Email notification service'
     }
   ]);
 
-  const [logs] = useState([
-    { id: 1, timestamp: '2024-01-18 14:30:22', module: 'Primary Search', level: 'INFO', message: 'Successfully processed 142 listings from AutoTrader and Cars.com' },
-    { id: 2, timestamp: '2024-01-18 14:25:15', module: 'Notifier', level: 'SUCCESS', message: 'Email sent to hello@foxtonsolutionsgroup.com' },
-    { id: 3, timestamp: '2024-01-18 14:20:08', module: 'Price Suggester', level: 'INFO', message: 'Generated price suggestions for BMW 3 Series based on market analysis' },
-    { id: 4, timestamp: '2024-01-18 14:15:33', module: 'Extended Search', level: 'INFO', message: 'Triggered secondary source search for new SearchSpec: Honda Civic 2020-2023' },
-    { id: 5, timestamp: '2024-01-18 14:10:45', module: 'Discovery Crawler', level: 'INFO', message: 'Found 3 new community sources: craigslist.org/seattle, facebook.com/marketplace, nextdoor.com' },
-  ]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(true);
+
+  useEffect(() => {
+    fetchEdgeFunctionLogs();
+  }, []);
+
+  const fetchEdgeFunctionLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      // Fetch logs from different edge functions
+      const functionNames = [
+        'primary-search',
+        'extended-search', 
+        'discovery-crawler',
+        'contextual-finder',
+        'price-suggester',
+        'notifier'
+      ];
+
+      const allLogs: LogEntry[] = [];
+
+      for (const functionName of functionNames) {
+        try {
+          const { data } = await supabase.functions.invoke('get-function-logs', {
+            body: { functionName }
+          });
+          
+          if (data?.logs) {
+            const formattedLogs = data.logs.map((log: any, index: number) => ({
+              id: `${functionName}-${index}`,
+              timestamp: new Date(log.timestamp).toLocaleString(),
+              module: functionName.split('-').map((word: string) => 
+                word.charAt(0).toUpperCase() + word.slice(1)
+              ).join(' '),
+              level: log.level || 'INFO',
+              message: log.message || log.event_message || 'Execution completed'
+            }));
+            allLogs.push(...formattedLogs);
+          }
+        } catch (error) {
+          console.log(`No logs available for ${functionName}`);
+        }
+      }
+
+      // Sort by timestamp descending
+      allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setLogs(allLogs.slice(0, 50)); // Keep only recent 50 logs
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+      setLogs([]);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
 
   const toggleModule = (moduleName: string) => {
     setModules(prev => prev.map(module => 
@@ -92,9 +149,22 @@ export const AdminDashboard = () => {
     ));
   };
 
-  const runModule = (moduleName: string) => {
-    console.log(`Manually invoking ${moduleName}`);
-    // In a real implementation, this would trigger the actual module
+  const runModule = async (moduleName: string) => {
+    const functionName = moduleName.toLowerCase().replace(/\s+/g, '-');
+    console.log(`Manually invoking ${functionName}`);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke(functionName);
+      if (error) {
+        console.error(`Error invoking ${functionName}:`, error);
+      } else {
+        console.log(`Successfully invoked ${functionName}:`, data);
+        // Refresh logs after manual invocation
+        setTimeout(() => fetchEdgeFunctionLogs(), 2000);
+      }
+    } catch (error) {
+      console.error(`Failed to invoke ${functionName}:`, error);
+    }
   };
 
   const activeConfigsCount = configs?.filter(config => config.is_active).length || 0;
@@ -102,6 +172,9 @@ export const AdminDashboard = () => {
     const today = new Date().toDateString();
     return new Date(listing.discovered_at).toDateString() === today;
   }).length || 0;
+  
+  const totalListings = listings?.length || 0;
+  const enabledModules = modules.filter(m => m.enabled).length;
 
   const getLogLevelColor = (level: string) => {
     switch (level) {
@@ -123,7 +196,7 @@ export const AdminDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {modules.filter(m => m.enabled).length}/{modules.length}
+              {enabledModules}/{modules.length}
             </div>
           </CardContent>
         </Card>
@@ -155,7 +228,7 @@ export const AdminDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {(modules.reduce((acc, m) => acc + m.successRate, 0) / modules.length).toFixed(1)}%
+              {totalListings > 0 ? 'Live' : 'No Data'}
             </div>
           </CardContent>
         </Card>
@@ -194,11 +267,11 @@ export const AdminDashboard = () => {
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-1">
                         <Clock className="h-4 w-4" />
-                        Last run: {module.lastRun || 'Never'}
+                        Last run: {module.lastRun || 'No recent activity'}
                       </div>
                       <div className="flex items-center gap-1">
-                        <BarChart3 className="h-4 w-4" />
-                        Success rate: {module.successRate}%
+                        <Database className="h-4 w-4" />
+                        Status: {module.enabled ? 'Active' : 'Disabled'}
                       </div>
                     </div>
                     <Button
@@ -222,33 +295,43 @@ export const AdminDashboard = () => {
             <CardHeader>
               <CardTitle>Recent Execution Logs</CardTitle>
               <CardDescription>
-                Real-time module execution logs and status updates
+                {isLoadingLogs ? 'Loading real-time logs...' : `Showing ${logs.length} recent entries`}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-96">
-                <div className="space-y-2">
-                  {logs.map((log) => (
-                    <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg border">
-                      <div className="mt-1">
-                        {log.level === 'ERROR' && <XCircle className="h-4 w-4 text-destructive" />}
-                        {log.level === 'SUCCESS' && <CheckCircle className="h-4 w-4 text-green-500" />}
-                        {log.level === 'WARNING' && <Clock className="h-4 w-4 text-yellow-500" />}
-                        {log.level === 'INFO' && <Activity className="h-4 w-4 text-blue-500" />}
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={getLogLevelColor(log.level)} className="text-xs">
-                            {log.level}
-                          </Badge>
-                          <span className="text-sm font-medium">{log.module}</span>
-                          <span className="text-xs text-muted-foreground">{log.timestamp}</span>
+                {isLoadingLogs ? (
+                  <div className="flex items-center justify-center h-32">
+                    <div className="text-muted-foreground">Loading logs...</div>
+                  </div>
+                ) : logs.length === 0 ? (
+                  <div className="flex items-center justify-center h-32">
+                    <div className="text-muted-foreground">No logs available yet</div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {logs.map((log) => (
+                      <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg border">
+                        <div className="mt-1">
+                          {log.level === 'ERROR' && <XCircle className="h-4 w-4 text-destructive" />}
+                          {log.level === 'SUCCESS' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                          {log.level === 'WARNING' && <Clock className="h-4 w-4 text-yellow-500" />}
+                          {log.level === 'INFO' && <Activity className="h-4 w-4 text-blue-500" />}
                         </div>
-                        <p className="text-sm text-muted-foreground">{log.message}</p>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={getLogLevelColor(log.level)} className="text-xs">
+                              {log.level}
+                            </Badge>
+                            <span className="text-sm font-medium">{log.module}</span>
+                            <span className="text-xs text-muted-foreground">{log.timestamp}</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{log.message}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </ScrollArea>
             </CardContent>
           </Card>
@@ -258,27 +341,38 @@ export const AdminDashboard = () => {
           <div className="grid gap-4">
             <Card>
               <CardHeader>
-                <CardTitle>Module Performance Metrics</CardTitle>
+                <CardTitle>System Status</CardTitle>
                 <CardDescription>
-                  Success rates and performance statistics for each module
+                  Current system health and data statistics
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {modules.map((module) => (
-                    <div key={module.name} className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>{module.name}</span>
-                        <span>{module.successRate}%</span>
-                      </div>
-                      <div className="w-full bg-secondary rounded-full h-2">
-                        <div
-                          className="bg-primary h-2 rounded-full transition-all"
-                          style={{ width: `${module.successRate}%` }}
-                        />
-                      </div>
+                  <div className="flex justify-between items-center p-4 border rounded-lg">
+                    <div>
+                      <h4 className="font-medium">Database Connection</h4>
+                      <p className="text-sm text-muted-foreground">Supabase connection status</p>
                     </div>
-                  ))}
+                    <Badge variant="default">Connected</Badge>
+                  </div>
+                  <div className="flex justify-between items-center p-4 border rounded-lg">
+                    <div>
+                      <h4 className="font-medium">Active Search Configurations</h4>
+                      <p className="text-sm text-muted-foreground">Currently active search specs</p>
+                    </div>
+                    <Badge variant={activeConfigsCount > 0 ? "default" : "secondary"}>
+                      {activeConfigsCount}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between items-center p-4 border rounded-lg">
+                    <div>
+                      <h4 className="font-medium">Total Listings</h4>
+                      <p className="text-sm text-muted-foreground">All discovered listings</p>
+                    </div>
+                    <Badge variant={totalListings > 0 ? "default" : "secondary"}>
+                      {totalListings}
+                    </Badge>
+                  </div>
                 </div>
               </CardContent>
             </Card>
