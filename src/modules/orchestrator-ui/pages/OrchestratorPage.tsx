@@ -151,7 +151,7 @@ export function OrchestratorPage() {
             <div className="p-6 border-b">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold">Search Configuration</h2>
+                  <h2 className="text-xl font-semibold">Build Your Haystack</h2>
                   <p className="text-muted-foreground mt-1">
                     Configure your automated search criteria for vehicle listings.
                   </p>
