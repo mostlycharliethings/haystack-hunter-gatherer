@@ -143,8 +143,14 @@ export function OrchestratorPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
-      <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold">Haystack Hunter & Gatherer</h1>
+      <div className="text-center space-y-4">
+        <div className="flex justify-center">
+          <img 
+            src="/lovable-uploads/2ec7ae5e-7c52-47f0-a9ea-89fa35c67a40.png" 
+            alt="Feed Me Haystacks" 
+            className="h-20 w-auto"
+          />
+        </div>
         <p className="text-muted-foreground">
           Configure your searches and browse discovered listings across multiple marketplaces
         </p>
