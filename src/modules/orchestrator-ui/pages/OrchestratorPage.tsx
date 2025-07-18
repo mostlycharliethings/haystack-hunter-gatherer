@@ -105,7 +105,7 @@ export function OrchestratorPage() {
       <div className="text-center space-y-4">
         <div className="flex justify-center">
           <img 
-            src="/lovable-uploads/2ec7ae5e-7c52-47f0-a9ea-89fa35c67a40.png" 
+            src="/lovable-uploads/97922417-e587-454d-802e-c6733c3a4d6f.png" 
             alt="Feed Me Haystacks" 
             className="h-20 w-auto"
           />
