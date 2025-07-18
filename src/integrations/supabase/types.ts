@@ -14,6 +14,83 @@ export type Database = {
   }
   public: {
     Tables: {
+      craigslist_areas: {
+        Row: {
+          abbreviation: string
+          area_id: string
+          country: string
+          created_at: string
+          description: string
+          hostname: string
+          id: number
+          latitude: number
+          longitude: number
+          region: string | null
+          short_description: string | null
+          updated_at: string
+        }
+        Insert: {
+          abbreviation: string
+          area_id: string
+          country: string
+          created_at?: string
+          description: string
+          hostname: string
+          id?: number
+          latitude: number
+          longitude: number
+          region?: string | null
+          short_description?: string | null
+          updated_at?: string
+        }
+        Update: {
+          abbreviation?: string
+          area_id?: string
+          country?: string
+          created_at?: string
+          description?: string
+          hostname?: string
+          id?: number
+          latitude?: number
+          longitude?: number
+          region?: string | null
+          short_description?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      craigslist_sub_areas: {
+        Row: {
+          abbreviation: string
+          created_at: string
+          description: string
+          id: number
+          parent_area_id: string
+        }
+        Insert: {
+          abbreviation: string
+          created_at?: string
+          description: string
+          id?: number
+          parent_area_id: string
+        }
+        Update: {
+          abbreviation?: string
+          created_at?: string
+          description?: string
+          id?: number
+          parent_area_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "craigslist_sub_areas_parent_area_id_fkey"
+            columns: ["parent_area_id"]
+            isOneToOne: false
+            referencedRelation: "craigslist_areas"
+            referencedColumns: ["area_id"]
+          },
+        ]
+      }
       listings: {
         Row: {
           discovered_at: string
@@ -241,7 +318,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_nearby_craigslist_areas: {
+        Args: { user_lat: number; user_lon: number; radius_miles?: number }
+        Returns: {
+          area_id: string
+          hostname: string
+          description: string
+          distance_miles: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
