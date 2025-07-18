@@ -1,7 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
+// Try different possible environment variable names used by Lovable
+const supabaseUrl = 
+  import.meta.env.VITE_SUPABASE_URL ||
+  import.meta.env.SUPABASE_URL ||
+  import.meta.env.REACT_APP_SUPABASE_URL;
+
+const supabaseAnonKey = 
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.SUPABASE_ANON_KEY ||
+  import.meta.env.REACT_APP_SUPABASE_ANON_KEY;
+
+// Debug logging
+console.log('Environment check:');
+console.log('- Supabase URL found:', !!supabaseUrl);
+console.log('- Supabase Anon Key found:', !!supabaseAnonKey);
+console.log('- Available env vars:', Object.keys(import.meta.env));
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase environment variables not found. Please ensure Supabase integration is properly connected.');
+  throw new Error('Supabase configuration missing. Please check that your Supabase integration is active in Lovable.');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
