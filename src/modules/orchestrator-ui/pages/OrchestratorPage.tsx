@@ -1,8 +1,13 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { SearchConfigForm } from "../components/SearchConfigForm";
 import { SearchConfigList } from "../components/SearchConfigList";
 import { ListingsBrowser } from "../components/ListingsBrowser";
+import { LocationDisplay } from "@/components/LocationDisplay";
+import { VersionDisplay } from "@/components/VersionDisplay";
+import { Settings } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useSearchConfigs } from "@/hooks/useSearchConfigs";
 import { useListings } from "@/hooks/useListings";
 
@@ -101,19 +106,38 @@ export function OrchestratorPage() {
   };
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="text-center space-y-4">
-        <div className="flex justify-center">
-          <img 
-            src="/lovable-uploads/97922417-e587-454d-802e-c6733c3a4d6f.png" 
-            alt="Feed Me Haystacks" 
-            className="h-20 w-auto"
-          />
+    <div className="min-h-screen bg-gradient-to-br from-background to-muted">
+      {/* Header with logo */}
+      <div className="bg-card border-b">
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex-1" />
+            <div className="flex items-center justify-center flex-1">
+              <img 
+                src="/lovable-uploads/97922417-e587-454d-802e-c6733c3a4d6f.png" 
+                alt="Feed Me Haystacks" 
+                className="max-h-16 w-auto"
+              />
+            </div>
+            <div className="flex-1 flex items-center justify-end gap-4">
+              <Link to="/admin">
+                <Button variant="outline" size="sm">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Admin
+                </Button>
+              </Link>
+              <VersionDisplay />
+            </div>
+          </div>
         </div>
-        <p className="text-muted-foreground">
-          Configure your searches and browse discovered listings across multiple marketplaces
-        </p>
       </div>
+      
+      <div className="container mx-auto py-6 space-y-6">
+        <div className="text-center">
+          <p className="text-muted-foreground">
+            Configure your searches and browse discovered listings across multiple marketplaces
+          </p>
+        </div>
 
       <Tabs defaultValue="configure" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
@@ -123,22 +147,35 @@ export function OrchestratorPage() {
         </TabsList>
 
         <TabsContent value="configure" className="space-y-6">
-          <div className="flex justify-center">
-            <SearchConfigForm 
-              onSubmit={handleConfigSubmit}
-              initialData={editingConfig}
-            />
-          </div>
-          {editingConfig && (
-            <div className="flex justify-center">
-              <button
-                onClick={() => setEditingConfig(null)}
-                className="text-sm text-muted-foreground underline"
-              >
-                Cancel editing
-              </button>
+          <div className="bg-card rounded-lg border shadow-sm">
+            <div className="p-6 border-b">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold">Search Configuration</h2>
+                  <p className="text-muted-foreground mt-1">
+                    Configure your automated search criteria for vehicle listings.
+                  </p>
+                </div>
+                <LocationDisplay />
+              </div>
             </div>
-          )}
+            <div className="p-6">
+              <SearchConfigForm 
+                onSubmit={handleConfigSubmit}
+                initialData={editingConfig}
+              />
+              {editingConfig && (
+                <div className="flex justify-center mt-4">
+                  <button
+                    onClick={() => setEditingConfig(null)}
+                    className="text-sm text-muted-foreground underline"
+                  >
+                    Cancel editing
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="searches" className="space-y-6">
@@ -187,6 +224,7 @@ export function OrchestratorPage() {
           />
         </TabsContent>
       </Tabs>
+      </div>
     </div>
   );
 }
