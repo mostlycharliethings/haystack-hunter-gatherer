@@ -20,6 +20,7 @@ const searchConfigSchema = z.object({
   priceThreshold: z.number().min(1, "Price threshold must be greater than 0"),
   priceMultiplier: z.number().min(0.01).max(5).default(1),
   location: z.string().optional(),
+  email: z.string().email("Please enter a valid email address").min(1, "Email is required"),
 });
 
 type SearchConfigFormData = z.infer<typeof searchConfigSchema>;
@@ -45,6 +46,7 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
       priceThreshold: initialData?.priceThreshold || 1000,
       priceMultiplier: initialData?.priceMultiplier || 1,
       location: initialData?.location || "",
+      email: initialData?.email || "",
     },
   });
 
@@ -223,6 +225,25 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
                   <FormLabel>Location Override</FormLabel>
                   <FormControl>
                     <Input placeholder="Leave blank to use browser location" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Email for Notifications */}
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email for Notifications *</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="email" 
+                      placeholder="your.email@example.com" 
+                      {...field} 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
