@@ -21,7 +21,7 @@ const searchConfigSchema = z.object({
   yearStart: z.string().optional(),
   yearEnd: z.string().optional(),
   priceThreshold: z.number().min(1, "Price threshold must be greater than 0"),
-  priceMultiplier: z.number().min(0.01).max(5).default(1),
+  priceMultiplier: z.number().min(1).max(6).default(1),
   location: z.string().optional(),
   email: z.string().email("Please enter a valid email address").min(1, "Email is required"),
 });
@@ -56,13 +56,7 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
   });
 
   const handleSubmit = (data: SearchConfigFormData) => {
-    // Ensure price multiplier is at least 1.0 if set to 0
-    const finalData = {
-      ...data,
-      priceMultiplier: data.priceMultiplier === 0 ? 1.0 : data.priceMultiplier,
-    };
-    
-    onSubmit(finalData);
+    onSubmit(data);
     toast({
       title: "Search Configuration Saved",
       description: "Your search criteria have been saved successfully.",
@@ -132,7 +126,7 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
     setPriceMultiplier(multiplier);
     toast({
       title: "Price Settings Applied",
-      description: `Set threshold to $${threshold.toLocaleString()} with ${multiplier}x multiplier`,
+      description: `Set threshold to $${threshold.toLocaleString()} with ${((multiplier - 1) * 100).toFixed(0)}% above threshold`,
     });
   };
 
@@ -258,24 +252,24 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
               />
 
               <div className="space-y-2">
-                <Label>Price Range Multiplier: {priceMultiplier.toFixed(2)}x</Label>
+                <Label>Price Range Multiplier: {((priceMultiplier - 1) * 100).toFixed(0)}% above threshold</Label>
                 <div className="px-2">
                   <Slider
                     value={[priceMultiplier]}
                     onValueChange={handlePriceMultiplierChange}
-                    max={5}
-                    min={0}
+                    max={6}
+                    min={1}
                     step={0.1}
                     className="w-full"
                   />
                 </div>
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>0%</span>
-                  <span>100%</span>
-                  <span>500%</span>
+                  <span>0% (${form.watch("priceThreshold")?.toLocaleString() || "0"})</span>
+                  <span>250%</span>
+                  <span>500% (${calculatedMaxPrice.toLocaleString()})</span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Max price: ${calculatedMaxPrice.toLocaleString()}
+                  Search range: ${form.watch("priceThreshold")?.toLocaleString() || "0"} - ${calculatedMaxPrice.toLocaleString()}
                 </p>
               </div>
 
