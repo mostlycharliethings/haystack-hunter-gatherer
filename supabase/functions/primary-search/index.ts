@@ -213,6 +213,151 @@ async function scrapeCraigslist(searchTerms: string[], config: SearchConfig): Pr
     }
   }
 
+  
+  return listings;
+}
+
+async function scrapeFacebookMarketplace(searchTerms: string[], config: SearchConfig): Promise<ScrapedListing[]> {
+  const listings: ScrapedListing[] = [];
+  const scraperApiKey = Deno.env.get('SCRAPER_API_KEY');
+
+  if (!scraperApiKey) {
+    throw new Error('SCRAPER_API_KEY not configured');
+  }
+
+  const location = config.location || 'denver';
+  
+  for (const term of searchTerms.slice(0, 2)) {
+    const searchUrl = `https://www.facebook.com/marketplace/search/?query=${encodeURIComponent(term)}`;
+    const proxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(searchUrl)}`;
+
+    try {
+      const response = await fetch(proxyUrl);
+      const html = await response.text();
+
+      // Debug output:
+      console.log(`--- RAW HTML from Facebook Marketplace for term "${term}" ---`);
+      console.log(html.slice(0, 1000)); // Show first 1000 chars
+
+      if (!response.ok) {
+        console.error(`Non-OK response from Facebook: ${response.status}`);
+        continue;
+      }
+
+      const fbListings = parseFacebookMarketplace(html, 'Facebook Marketplace');
+      if (fbListings.length === 0) {
+        console.warn(`❌ No listings parsed from Facebook - possible HTML mismatch`);
+      } else {
+        console.log(`✅ ${fbListings.length} listings parsed from Facebook`);
+      }
+
+      listings.push(...fbListings);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Longer delay for Facebook
+    } catch (error) {
+      console.error(`Facebook Marketplace scraping error:`, error);
+    }
+  }
+
+  return listings;
+}
+
+async function scrapeEbay(searchTerms: string[], config: SearchConfig): Promise<ScrapedListing[]> {
+  const listings: ScrapedListing[] = [];
+  const scraperApiKey = Deno.env.get('SCRAPER_API_KEY');
+
+  if (!scraperApiKey) {
+    throw new Error('SCRAPER_API_KEY not configured');
+  }
+
+  for (const term of searchTerms.slice(0, 2)) {
+    const searchUrl = `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(term)}&_sacat=0&LH_Sold=1&LH_Complete=1`;
+    const proxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(searchUrl)}`;
+
+    try {
+      const response = await fetch(proxyUrl);
+      const html = await response.text();
+
+      // Debug output:
+      console.log(`--- RAW HTML from eBay for term "${term}" ---`);
+      console.log(html.slice(0, 1000)); // Show first 1000 chars
+
+      if (!response.ok) {
+        console.error(`Non-OK response from eBay: ${response.status}`);
+        continue;
+      }
+
+      const ebayListings = parseEbay(html, 'eBay');
+      if (ebayListings.length === 0) {
+        console.warn(`❌ No listings parsed from eBay - possible HTML mismatch`);
+      } else {
+        console.log(`✅ ${ebayListings.length} listings parsed from eBay`);
+      }
+
+      listings.push(...ebayListings);
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    } catch (error) {
+      console.error(`eBay scraping error:`, error);
+    }
+  }
+
+  return listings;
+}
+
+function parseFacebookMarketplace(html: string, source: string): ScrapedListing[] {
+  const listings: ScrapedListing[] = [];
+  
+  // Basic parser - would need updating based on actual Facebook HTML structure
+  // Facebook uses heavily obfuscated class names and JSON-LD data
+  const listingRegex = /"marketplace_listing_title":"([^"]+)".*?"listing_price":{"amount":"(\d+)"/g;
+  
+  let match;
+  while ((match = listingRegex.exec(html)) !== null) {
+    const title = match[1];
+    const price = parseInt(match[2]);
+    
+    if (price > 0 && title) {
+      listings.push({
+        title: title.trim(),
+        price,
+        location: source,
+        url: `https://facebook.com/marketplace/item/${Date.now()}`, // Placeholder
+        source,
+        tier: 1
+      });
+    }
+  }
+  
+  return listings;
+}
+
+function parseEbay(html: string, source: string): ScrapedListing[] {
+  const listings: ScrapedListing[] = [];
+  
+  // Basic parser - would need updating based on actual eBay HTML structure
+  const listingRegex = /<a class="[^"]*s-item__link[^"]*" href="([^"]+)"[^>]*>.*?<span class="[^"]*s-item__price[^"]*">[\$\s]*([0-9,]+\.?\d*)/gs;
+  
+  let match;
+  while ((match = listingRegex.exec(html)) !== null) {
+    const url = match[1];
+    const priceStr = match[2];
+    const price = parseFloat(priceStr.replace(/,/g, ''));
+    
+    // Extract title from the same section
+    const titleMatch = html.substr(match.index, 500).match(/<span[^>]*role="heading"[^>]*>([^<]+)<\/span>/);
+    const title = titleMatch ? titleMatch[1] : 'eBay Listing';
+    
+    if (price > 0) {
+      listings.push({
+        title: title.trim(),
+        price,
+        location: source,
+        url: url.startsWith('http') ? url : `https://ebay.com${url}`,
+        source,
+        tier: 1
+      });
+    }
+  }
+  
   return listings;
 }
 
