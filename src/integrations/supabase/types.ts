@@ -369,6 +369,45 @@ export type Database = {
           },
         ]
       }
+      widenet_results: {
+        Row: {
+          discovered_at: string
+          id: string
+          is_visited: boolean | null
+          notes: string | null
+          position: number
+          search_config_id: string
+          search_query: string
+          snippet: string | null
+          title: string
+          url: string
+        }
+        Insert: {
+          discovered_at?: string
+          id?: string
+          is_visited?: boolean | null
+          notes?: string | null
+          position: number
+          search_config_id: string
+          search_query: string
+          snippet?: string | null
+          title: string
+          url: string
+        }
+        Update: {
+          discovered_at?: string
+          id?: string
+          is_visited?: boolean | null
+          notes?: string | null
+          position?: number
+          search_config_id?: string
+          search_query?: string
+          snippet?: string | null
+          title?: string
+          url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -88,6 +88,11 @@ export const AdminDashboard = () => {
           description: 'AI-powered contextual search refinement'
         },
         {
+          name: 'WideNet Explorer',
+          enabled: true,
+          description: 'Google search safety net for zero-result searches'
+        },
+        {
           name: 'Price Suggester',
           enabled: true,
           description: 'Dynamic price threshold recommendations'
@@ -175,7 +180,8 @@ export const AdminDashboard = () => {
       
       // Different modules require different payloads
       if (functionName === 'primary-search' || functionName === 'extended-search' || 
-          functionName === 'contextual-finder' || functionName === 'discovery-crawler') {
+          functionName === 'contextual-finder' || functionName === 'discovery-crawler' || 
+          functionName === 'widenet-explorer') {
         // These modules need to run for all active search configs
         const activeConfigs = configs?.filter(config => config.is_active) || [];
         if (activeConfigs.length === 0) {

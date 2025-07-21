@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Play, Pause, Edit, Trash2 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Play, Pause, Edit, Trash2, Globe, ChevronDown, ChevronUp } from "lucide-react";
+import { WidenetResults } from "@/components/WidenetResults";
 
 interface SearchConfig {
   id: string;
@@ -30,6 +32,19 @@ interface SearchConfigListProps {
 }
 
 export function SearchConfigList({ configs, loading, onEdit, onDelete, onToggleActive }: SearchConfigListProps) {
+  const [expandedConfigs, setExpandedConfigs] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (configId: string) => {
+    setExpandedConfigs(prev => {
+      const next = new Set(prev);
+      if (next.has(configId)) {
+        next.delete(configId);
+      } else {
+        next.add(configId);
+      }
+      return next;
+    });
+  };
   const formatSearchTerm = (config: SearchConfig) => {
     const parts = [config.brand, config.model];
     if (config.qualifier) parts.push(config.qualifier);
@@ -161,7 +176,34 @@ export function SearchConfigList({ configs, loading, onEdit, onDelete, onToggleA
                       <Trash2 className="h-4 w-4 mr-1" />
                       Delete
                     </Button>
+                    
+                    <Collapsible open={expandedConfigs.has(config.id)}>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleExpanded(config.id)}
+                        >
+                          <Globe className="h-4 w-4 mr-1" />
+                          WideNet Results
+                          {expandedConfigs.has(config.id) ? (
+                            <ChevronUp className="h-4 w-4 ml-1" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 ml-1" />
+                          )}
+                        </Button>
+                      </CollapsibleTrigger>
+                    </Collapsible>
                   </div>
+                  
+                  <Collapsible open={expandedConfigs.has(config.id)}>
+                    <CollapsibleContent className="pt-4">
+                      <WidenetResults 
+                        searchConfigId={config.id}
+                        searchConfigName={formatSearchTerm(config)}
+                      />
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
               </CardContent>
             </Card>
