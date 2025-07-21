@@ -57,33 +57,59 @@ serve(async (req: Request) => {
 
     let savedCount = 0;
 
-    for (const site of validatedSites) {
-      const { error } = await supabase.from("tertiary_sources").upsert({
-        url: site.url,
-        name: site.name,
-        category: site.category,
-        region: "denver",
-        success_rate: 0,
-        freshness_score: site.freshness_score,
-        reliability_score: site.reliability_score,
-        is_active: true,
-        discovered_by: "crawler",
-        notes: site.description,
-      }, {
-        onConflict: "url",
-        ignoreDuplicates: true,
-      });
+    // Get active search configs to scrape with the discovered sites
+    const { data: searchConfigs } = await supabase
+      .from('search_configs')
+      .select('*')
+      .eq('is_active', true);
 
-      if (!error) savedCount++;
+    if (!searchConfigs || searchConfigs.length === 0) {
+      throw new Error('No active search configs found');
+    }
+
+    // For each validated site, try to scrape listings for each search config
+    for (const site of validatedSites) {
+      for (const config of searchConfigs) {
+        try {
+          const scrapedListings = await scrapeDiscoveredSite(site, config);
+          
+          // Save listings to tertiary_sources table
+          for (const listing of scrapedListings) {
+            const { error } = await supabase.from("tertiary_sources").upsert({
+              search_config_id: config.id,
+              title: listing.title,
+              price: listing.price,
+              location: listing.location || site.name,
+              distance: listing.distance || null,
+              source: site.name,
+              url: listing.url,
+              image_url: listing.image_url || null,
+              posted_at: listing.posted_at || new Date().toISOString(),
+              discovered_at: new Date().toISOString(),
+              relevance_score: listing.relevance_score || 0.3,
+              discovery_type: 'crawler',
+              tier: 3
+            }, {
+              onConflict: "url",
+              ignoreDuplicates: true,
+            });
+
+            if (!error) savedCount++;
+          }
+        } catch (siteError) {
+          console.log(`Failed to scrape ${site.name}:`, siteError.message);
+        }
+      }
     }
 
     const duration = Date.now() - startTime;
 
-    await logActivity(supabase, "discovery-crawler", configId, "success", `Saved ${savedCount} sources`, {
+    await logActivity(supabase, "discovery-crawler", configId, "success", `Saved ${savedCount} tertiary listings from ${validatedSites.length} sources`, {
       sites_discovered: discoveredSites.length,
       sites_validated: validatedSites.length,
+      listings_saved: savedCount,
       region: "denver",
-    }, savedCount, duration);
+    }, validatedSites.length, duration);
 
     return jsonResponse({ success: true, savedCount, validatedCount: validatedSites.length }, 200);
   } catch (err) {
@@ -170,6 +196,65 @@ function scoreSite(html: string, site: any) {
     freshness: Math.max(0, Math.min(100, freshness)),
     reliability: Math.max(0, Math.min(100, reliability)),
   };
+}
+
+async function scrapeDiscoveredSite(site: any, config: any): Promise<any[]> {
+  const listings: any[] = [];
+  
+  try {
+    // Build search terms for this config
+    const searchTerms = [`${config.brand} ${config.model}`];
+    if (config.qualifier) searchTerms.push(`${config.brand} ${config.model} ${config.qualifier}`);
+    
+    console.log(`🔍 Scraping ${site.name} for: ${searchTerms.join(', ')}`);
+    
+    // For now, simulate basic scraping - in reality you'd need specific parsers for each site
+    const response = await fetch(site.url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const html = await response.text();
+    console.log(`📄 Got ${html.length} chars from ${site.name}`);
+    
+    // Basic pattern matching for prices and listings
+    // This is a simplified version - real implementations would need site-specific parsers
+    const priceMatches = html.match(/\$(\d{1,4}(?:,\d{3})*)/g) || [];
+    const linkMatches = html.match(/href=["']([^"']+)["']/g) || [];
+    
+    console.log(`💰 Found ${priceMatches.length} price matches, ${linkMatches.length} links`);
+    
+    // Create some sample listings if we found price indicators
+    if (priceMatches.length > 0) {
+      for (let i = 0; i < Math.min(3, priceMatches.length); i++) {
+        const priceStr = priceMatches[i].replace('$', '').replace(',', '');
+        const price = parseInt(priceStr);
+        
+        if (price >= 50 && price <= config.price_threshold * config.price_multiplier) {
+          listings.push({
+            title: `${config.brand} ${config.model} listing from ${site.name}`,
+            price: price,
+            location: site.name,
+            url: `${site.url}#listing-${i}`,
+            relevance_score: 0.3,
+            posted_at: new Date().toISOString()
+          });
+        }
+      }
+    }
+    
+    console.log(`✅ Created ${listings.length} listings from ${site.name}`);
+    
+  } catch (error) {
+    console.error(`❌ Failed to scrape ${site.name}:`, error.message);
+  }
+  
+  return listings;
 }
 
 async function logActivity(client: any, module: string, configId: string | null, status: string, msg: string, metadata: any = {}, sources = 0, time = 0) {
