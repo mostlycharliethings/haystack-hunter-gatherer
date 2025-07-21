@@ -47,7 +47,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { type, searchConfigId, configs } = await req.json();
+    const { type, searchConfigId, configs, to, searchTerm, listingUrl, price } = await req.json();
 
     console.log(`Notifier triggered for type: ${type}`);
 
@@ -75,6 +75,13 @@ serve(async (req) => {
       const result = await sendDailyDigest(supabaseClient, configs);
       emailsSent = result.emailsSent;
       errors.push(...result.errors);
+    } else if (type === 'listing_found') {
+      // Send listing alert email
+      const result = await sendListingAlert({ to, searchTerm, listingUrl, price });
+      emailsSent = result.success ? 1 : 0;
+      if (!result.success) {
+        errors.push(result.error);
+      }
     } else {
       throw new Error(`Unknown notification type: ${type}`);
     }
@@ -282,6 +289,23 @@ async function buildDigestData(supabaseClient: any, configs: SearchConfig[]): Pr
   return digestData;
 }
 
+async function sendListingAlert({ to, searchTerm, listingUrl, price }: { to: string, searchTerm: string, listingUrl: string, price: number }): Promise<{ success: boolean, error?: string }> {
+  try {
+    const emailHtml = generateListingAlertEmailHtml({ searchTerm, listingUrl, price });
+
+    const emailResult = await sendEmail({
+      to: to,
+      subject: `🎯 New listing found: ${searchTerm} - $${price.toLocaleString()}`,
+      html: emailHtml
+    });
+
+    return emailResult;
+  } catch (error) {
+    console.error('Listing alert email error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 async function sendEmail({ to, subject, html }: { to: string, subject: string, html: string }): Promise<{ success: boolean, error?: string }> {
   const resendApiKey = Deno.env.get('RESEND_API_KEY');
   
@@ -352,6 +376,58 @@ Provide a brief, helpful price range estimate in this format: "Typically $X,XXX 
     console.error('Error getting average market price:', error);
     return null;
   }
+}
+
+function generateListingAlertEmailHtml({ searchTerm, listingUrl, price }: { searchTerm: string, listingUrl: string, price: number }): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Listing Alert</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background-color: #f5f5f5; }
+    .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header { text-align: center; margin-bottom: 30px; }
+    .logo { color: #FCD34D; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+    .alert-box { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 20px; border-radius: 6px; margin: 20px 0; text-align: center; }
+    .listing-details { background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0; }
+    .cta-button { display: inline-block; background: #FCD34D; color: #1f2937; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e9ecef; color: #6c757d; font-size: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🔍 Feed Me Haystacks</div>
+      <h1 style="color: #212529; margin: 0;">New Listing Found!</h1>
+    </div>
+    
+    <div class="alert-box">
+      <h2 style="margin: 0; color: #155724;">🎯 Match Found!</h2>
+      <p style="margin: 10px 0 0 0;">We found a new listing that matches your search criteria.</p>
+    </div>
+    
+    <div class="listing-details">
+      <h3 style="margin-top: 0; color: #495057;">Listing Details</h3>
+      <p><strong>Item:</strong> ${searchTerm}</p>
+      <p><strong>Price:</strong> $${price.toLocaleString()}</p>
+    </div>
+    
+    <div style="text-align: center;">
+      <a href="${listingUrl}" class="cta-button" target="_blank" rel="noopener">View Listing →</a>
+    </div>
+    
+    <p><strong>Act fast!</strong> Popular items can sell quickly. Click the link above to view the full listing and contact the seller.</p>
+    
+    <div class="footer">
+      <p>Happy hunting! 🎯<br>
+      The Haystack Team</p>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 function generateConfirmationEmailHtml({ searchTerm, priceRange, location, averagePrice, yearRange }: any): string {
