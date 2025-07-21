@@ -316,17 +316,8 @@ async function scrapeSource(source: Source, searchVariants: string[], config: Se
   const listings: ScrapedListing[] = [];
   
   if (!scraperApiKey) {
-    console.log(`No SCRAPER_API_KEY configured, using fake data for ${source.name}`);
-    // Return fake listings for development/testing
-    return [{
-      title: `Test ${config.brand} ${config.model} from ${source.name}`,
-      price: Math.floor(Math.random() * 5000) + 1000,
-      location: config.location || 'Unknown Location',
-      url: `${source.url}/test-listing-${Date.now()}`,
-      source: source.name,
-      tier: source.tier,
-      posted_at: new Date().toISOString()
-    }];
+    console.error(`No SCRAPER_API_KEY configured, cannot scrape ${source.name}`);
+    throw new Error('SCRAPER_API_KEY not configured for web scraping');
   }
 
   // Use the source URL directly if it contains search terms, otherwise build search URLs
