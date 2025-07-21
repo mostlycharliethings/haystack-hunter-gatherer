@@ -69,19 +69,24 @@ serve(async (req) => {
       try {
         const { error } = await supabaseClient
           .from('secondary_sources')
-          .upsert({
+          .insert({
+            search_config_id: searchConfigId,
+            title: marketplace.name,
+            price: 0, // Default price since these are marketplace sources
+            location: 'Online',
+            source: marketplace.name,
             url: marketplace.url,
-            name: marketplace.name,
-            category: category,
-            is_active: true,
-            discovered_by: 'gpt',
-            notes: marketplace.description
-          }, { 
-            onConflict: 'url',
-            ignoreDuplicates: true 
+            posted_at: new Date().toISOString(),
+            context_type: category,
+            tier: 2 // Secondary source tier
           });
 
-        if (!error) savedCount++;
+        if (!error) {
+          savedCount++;
+          console.log(`✓ Saved marketplace: ${marketplace.name}`);
+        } else {
+          console.error(`✗ Failed to save marketplace ${marketplace.name}:`, error);
+        }
       } catch (error) {
         console.error('Error saving marketplace:', error);
       }
