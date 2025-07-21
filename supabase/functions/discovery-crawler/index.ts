@@ -237,47 +237,70 @@ async function scrapeDiscoveredSite(site: any, config: any): Promise<any[]> {
     
     console.log(`🔍 Scraping ${site.name} for: ${searchTerms.join(', ')}`);
     
-    // For now, simulate basic scraping - in reality you'd need specific parsers for each site
-    const response = await fetch(site.url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    // Respectful delay before scraping (2-5 seconds random)
+    const delay = 2000 + Math.random() * 3000;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
+    try {
+      const response = await fetch(site.url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log(`⚠️  ${site.name} returned 404 - site may be down`);
+          return listings;
+        }
+        throw new Error(`HTTP ${response.status}`);
       }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    
-    const html = await response.text();
-    console.log(`📄 Got ${html.length} chars from ${site.name}`);
-    
-    // Basic pattern matching for prices and listings
-    // This is a simplified version - real implementations would need site-specific parsers
-    const priceMatches = html.match(/\$(\d{1,4}(?:,\d{3})*)/g) || [];
-    const linkMatches = html.match(/href=["']([^"']+)["']/g) || [];
-    
-    console.log(`💰 Found ${priceMatches.length} price matches, ${linkMatches.length} links`);
-    
-    // Create some sample listings if we found price indicators
-    if (priceMatches.length > 0) {
-      for (let i = 0; i < Math.min(3, priceMatches.length); i++) {
-        const priceStr = priceMatches[i].replace('$', '').replace(',', '');
-        const price = parseInt(priceStr);
-        
-        if (price >= 50 && price <= config.price_threshold * config.price_multiplier) {
-          listings.push({
-            title: `${config.brand} ${config.model} listing from ${site.name}`,
-            price: price,
-            location: site.name,
-            url: `${site.url}#listing-${i}`,
-            relevance_score: 0.3,
-            posted_at: new Date().toISOString()
-          });
+      
+      const html = await response.text();
+      console.log(`📄 Got ${html.length} chars from ${site.name}`);
+      
+      // Basic pattern matching for prices and listings
+      const priceMatches = html.match(/\$(\d{1,4}(?:,\d{3})*)/g) || [];
+      const linkMatches = html.match(/href=["']([^"']+)["']/g) || [];
+      
+      console.log(`💰 Found ${priceMatches.length} price matches, ${linkMatches.length} links`);
+      
+      // Create sample listings if we found price indicators
+      if (priceMatches.length > 0) {
+        for (let i = 0; i < Math.min(3, priceMatches.length); i++) {
+          const priceStr = priceMatches[i].replace('$', '').replace(',', '');
+          const price = parseInt(priceStr);
+          
+          if (price >= 50 && price <= config.price_threshold * config.price_multiplier) {
+            listings.push({
+              title: `${config.brand} ${config.model} listing from ${site.name}`,
+              price: price,
+              location: site.name,
+              url: `${site.url}#listing-${i}`,
+              relevance_score: 0.3,
+              posted_at: new Date().toISOString()
+            });
+          }
         }
       }
+      
+      console.log(`✅ Created ${listings.length} listings from ${site.name}`);
+      
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        console.log(`⏰ Timeout scraping ${site.name} after 30 seconds`);
+      } else {
+        throw fetchError;
+      }
     }
-    
-    console.log(`✅ Created ${listings.length} listings from ${site.name}`);
     
   } catch (error) {
     console.error(`❌ Failed to scrape ${site.name}:`, error.message);
