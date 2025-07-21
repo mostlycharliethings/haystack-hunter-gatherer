@@ -305,26 +305,92 @@ async function scrapeEbay(searchTerms: string[], config: SearchConfig): Promise<
 
 function parseFacebookMarketplace(html: string, source: string): ScrapedListing[] {
   const listings: ScrapedListing[] = [];
+  console.log(`🔍 Starting Facebook Marketplace parsing for ${source}`);
   
-  // Basic parser - would need updating based on actual Facebook HTML structure
-  // Facebook uses heavily obfuscated class names and JSON-LD data
-  const listingRegex = /"marketplace_listing_title":"([^"]+)".*?"listing_price":{"amount":"(\d+)"/g;
-  
-  let match;
-  while ((match = listingRegex.exec(html)) !== null) {
-    const title = match[1];
-    const price = parseInt(match[2]);
-    
-    if (price > 0 && title) {
-      listings.push({
-        title: title.trim(),
-        price,
-        location: source,
-        url: `https://facebook.com/marketplace/item/${Date.now()}`, // Placeholder
-        source,
-        tier: 1
-      });
+  try {
+    // Strategy 1: JSON-LD structured data
+    const jsonLdMatches = html.match(/<script type="application\/ld\+json"[^>]*>(.*?)<\/script>/gs);
+    if (jsonLdMatches) {
+      console.log(`📄 Found ${jsonLdMatches.length} JSON-LD scripts in Facebook HTML`);
+      for (const jsonScript of jsonLdMatches) {
+        try {
+          const jsonContent = jsonScript.replace(/<script[^>]*>|<\/script>/g, '');
+          const data = JSON.parse(jsonContent);
+          if (data['@type'] === 'Product' || data.offers) {
+            const title = data.name || data.headline || 'Facebook Marketplace Listing';
+            const priceObj = data.offers?.price || data.price;
+            const price = parseFloat(priceObj?.toString().replace(/[^0-9.]/g, '') || '0');
+            const url = data.url || `https://facebook.com/marketplace/item/${Date.now()}`;
+            
+            if (price > 0 && title) {
+              listings.push({ title: title.trim(), price, location: source, url, source, tier: 1 });
+            }
+          }
+        } catch (e) {
+          console.log(`⚠️ Failed to parse JSON-LD: ${e.message}`);
+        }
+      }
     }
+
+    // Strategy 2: React props and data attributes
+    const reactDataMatches = html.match(/"marketplace_listing_title":"([^"]+)"|"listing_price":\s*{[^}]*"amount":\s*"?(\d+)"?/g);
+    if (reactDataMatches && reactDataMatches.length > 0) {
+      console.log(`📱 Found ${reactDataMatches.length} React data patterns in Facebook HTML`);
+      let titleMatch, priceMatch;
+      for (const match of reactDataMatches) {
+        if (match.includes('marketplace_listing_title')) {
+          titleMatch = match.match(/"marketplace_listing_title":"([^"]+)"/);
+        }
+        if (match.includes('listing_price')) {
+          priceMatch = match.match(/"amount":\s*"?(\d+)"?/);
+        }
+        
+        if (titleMatch && priceMatch) {
+          const title = titleMatch[1];
+          const price = parseInt(priceMatch[1]);
+          if (price > 0 && title) {
+            listings.push({
+              title: title.trim(),
+              price,
+              location: source,
+              url: `https://facebook.com/marketplace/item/${Date.now()}`,
+              source,
+              tier: 1
+            });
+          }
+          titleMatch = priceMatch = null;
+        }
+      }
+    }
+
+    // Strategy 3: Meta property tags
+    const metaPriceMatch = html.match(/<meta[^>]*property="product:price:amount"[^>]*content="([^"]+)"/);
+    const metaTitleMatch = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]+)"/);
+    if (metaPriceMatch && metaTitleMatch) {
+      console.log(`🏷️ Found meta property data in Facebook HTML`);
+      const title = metaTitleMatch[1];
+      const price = parseFloat(metaPriceMatch[1]);
+      if (price > 0 && title) {
+        listings.push({
+          title: title.trim(),
+          price,
+          location: source,
+          url: `https://facebook.com/marketplace/item/${Date.now()}`,
+          source,
+          tier: 1
+        });
+      }
+    }
+
+    if (listings.length === 0) {
+      console.log(`❌ No matching results found in Facebook Marketplace HTML (${html.length} chars)`);
+      console.log(`📋 HTML sample: ${html.substring(0, 500)}...`);
+    } else {
+      console.log(`✅ Parsed ${listings.length} listings from Facebook Marketplace`);
+    }
+
+  } catch (error) {
+    console.error(`💥 Facebook parsing error: ${error.message}`);
   }
   
   return listings;
@@ -332,30 +398,116 @@ function parseFacebookMarketplace(html: string, source: string): ScrapedListing[
 
 function parseEbay(html: string, source: string): ScrapedListing[] {
   const listings: ScrapedListing[] = [];
+  console.log(`🔍 Starting eBay parsing for ${source}`);
   
-  // Basic parser - would need updating based on actual eBay HTML structure
-  const listingRegex = /<a class="[^"]*s-item__link[^"]*" href="([^"]+)"[^>]*>.*?<span class="[^"]*s-item__price[^"]*">[\$\s]*([0-9,]+\.?\d*)/gs;
-  
-  let match;
-  while ((match = listingRegex.exec(html)) !== null) {
-    const url = match[1];
-    const priceStr = match[2];
-    const price = parseFloat(priceStr.replace(/,/g, ''));
+  try {
+    // Strategy 1: Modern eBay search results structure
+    const itemPattern = /<div[^>]*class="[^"]*s-item[^"]*"[^>]*>(.*?)<\/div>/gs;
+    const items = [...html.matchAll(itemPattern)];
     
-    // Extract title from the same section
-    const titleMatch = html.substr(match.index, 500).match(/<span[^>]*role="heading"[^>]*>([^<]+)<\/span>/);
-    const title = titleMatch ? titleMatch[1] : 'eBay Listing';
+    console.log(`📦 Found ${items.length} potential eBay item containers`);
     
-    if (price > 0) {
-      listings.push({
-        title: title.trim(),
-        price,
-        location: source,
-        url: url.startsWith('http') ? url : `https://ebay.com${url}`,
-        source,
-        tier: 1
-      });
+    for (const itemMatch of items) {
+      const itemHtml = itemMatch[1];
+      
+      // Extract link and title
+      const linkMatch = itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*>.*?<span[^>]*role="heading"[^>]*>([^<]+)<\/span>/s) ||
+                       itemHtml.match(/<a[^>]*class="[^"]*s-item__link[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/s);
+      
+      // Extract price with multiple patterns
+      const priceMatch = itemHtml.match(/<span[^>]*class="[^"]*s-item__price[^"]*"[^>]*>[\$\s]*([0-9,]+\.?\d*)/s) ||
+                         itemHtml.match(/<span[^>]*class="[^"]*notranslate[^"]*"[^>]*>[\$\s]*([0-9,]+\.?\d*)/s) ||
+                         itemHtml.match(/\$([0-9,]+\.?\d*)/);
+      
+      if (linkMatch && priceMatch) {
+        const url = linkMatch[1];
+        const title = linkMatch[2]?.replace(/<[^>]*>/g, '').trim() || 'eBay Listing';
+        const price = parseFloat(priceMatch[1].replace(/,/g, ''));
+        
+        if (price > 0 && url && title) {
+          listings.push({
+            title: title.trim(),
+            price,
+            location: source,
+            url: url.startsWith('http') ? url : `https://ebay.com${url}`,
+            source,
+            tier: 1
+          });
+        }
+      }
     }
+
+    // Strategy 2: Fallback for JSON data in scripts
+    if (listings.length === 0) {
+      console.log(`🔄 Trying fallback JSON parsing for eBay`);
+      const jsonMatches = html.match(/<script[^>]*>(.*?"itemSummary".*?)<\/script>/gs);
+      if (jsonMatches) {
+        for (const jsonScript of jsonMatches) {
+          try {
+            const jsonContent = jsonScript.replace(/<script[^>]*>|<\/script>/g, '');
+            const itemMatches = jsonContent.match(/"title":"([^"]+)".*?"price":{"value":([0-9.]+)/g);
+            
+            if (itemMatches) {
+              for (const item of itemMatches) {
+                const titleMatch = item.match(/"title":"([^"]+)"/);
+                const priceMatch = item.match(/"price":{"value":([0-9.]+)/);
+                
+                if (titleMatch && priceMatch) {
+                  const title = titleMatch[1];
+                  const price = parseFloat(priceMatch[1]);
+                  
+                  if (price > 0 && title) {
+                    listings.push({
+                      title: title.trim(),
+                      price,
+                      location: source,
+                      url: `https://ebay.com/itm/${Date.now()}`,
+                      source,
+                      tier: 1
+                    });
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.log(`⚠️ Failed to parse eBay JSON: ${e.message}`);
+          }
+        }
+      }
+    }
+
+    // Strategy 3: Ultra-simple regex fallback
+    if (listings.length === 0) {
+      console.log(`🔄 Trying regex fallback for eBay`);
+      const simplePattern = /href="([^"]*ebay[^"]*itm[^"]*)"[^>]*>.*?>\s*([^<]+?)\s*<.*?\$([0-9,]+\.?\d*)/gs;
+      let match;
+      while ((match = simplePattern.exec(html)) !== null) {
+        const url = match[1];
+        const title = match[2].trim();
+        const price = parseFloat(match[3].replace(/,/g, ''));
+        
+        if (price > 0 && title && url) {
+          listings.push({
+            title: title.trim(),
+            price,
+            location: source,
+            url: url.startsWith('http') ? url : `https://ebay.com${url}`,
+            source,
+            tier: 1
+          });
+        }
+      }
+    }
+
+    if (listings.length === 0) {
+      console.log(`❌ No matching results found in eBay HTML (${html.length} chars)`);
+      console.log(`📋 HTML sample: ${html.substring(0, 500)}...`);
+    } else {
+      console.log(`✅ Parsed ${listings.length} listings from eBay`);
+    }
+
+  } catch (error) {
+    console.error(`💥 eBay parsing error: ${error.message}`);
   }
   
   return listings;
@@ -363,30 +515,107 @@ function parseEbay(html: string, source: string): ScrapedListing[] {
 
 function parseCraigslist(html: string, source: string): ScrapedListing[] {
   const listings: ScrapedListing[] = [];
+  console.log(`🔍 Starting Craigslist parsing for ${source}`);
   
-  // Basic parser - this would need to be updated based on actual Craigslist HTML structure
-  const listingRegex = /<a href="([^"]+)" class="[^"]*result-title[^"]*"[^>]*>([^<]+)<\/a>/g;
-  const priceRegex = /\$(\d+(?:,\d{3})*)/;
-  
-  let match;
-  while ((match = listingRegex.exec(html)) !== null) {
-    const url = match[1];
-    const title = match[2];
+  try {
+    // Strategy 1: Modern Craigslist structure with data attributes
+    const itemPattern = /<li[^>]*class="[^"]*cl-search-result[^"]*"[^>]*>(.*?)<\/li>/gs;
+    const items = [...html.matchAll(itemPattern)];
     
-    // Extract price (basic implementation)
-    const priceMatch = html.substr(match.index, 200).match(priceRegex);
-    const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) : 0;
+    console.log(`📋 Found ${items.length} Craigslist search result containers`);
     
-    if (price > 0) {
-      listings.push({
-        title: title.trim(),
-        price,
-        location: source,
-        url: url.startsWith('http') ? url : `https://craigslist.org${url}`,
-        source,
-        tier: 1
-      });
+    for (const itemMatch of items) {
+      const itemHtml = itemMatch[1];
+      
+      // Extract title and link
+      const titleMatch = itemHtml.match(/<a[^>]*class="[^"]*cl-app-anchor[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/s) ||
+                        itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*title="([^"]+)"/s);
+      
+      // Extract price with multiple patterns
+      const priceMatch = itemHtml.match(/<span[^>]*class="[^"]*result-price[^"]*"[^>]*>\$([0-9,]+)/s) ||
+                        itemHtml.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+      
+      if (titleMatch && priceMatch) {
+        const url = titleMatch[1];
+        const title = titleMatch[2]?.replace(/<[^>]*>/g, '').trim() || 'Craigslist Listing';
+        const price = parseInt(priceMatch[1].replace(/,/g, ''));
+        
+        if (price > 0 && url && title) {
+          listings.push({
+            title: title.trim(),
+            price,
+            location: source,
+            url: url.startsWith('http') ? url : `https://craigslist.org${url}`,
+            source,
+            tier: 1
+          });
+        }
+      }
     }
+
+    // Strategy 2: Legacy result-row structure
+    if (listings.length === 0) {
+      console.log(`🔄 Trying legacy result-row parsing for Craigslist`);
+      const legacyPattern = /<p[^>]*class="[^"]*result-info[^"]*"[^>]*>(.*?)<\/p>/gs;
+      const legacyItems = [...html.matchAll(legacyPattern)];
+      
+      for (const itemMatch of legacyItems) {
+        const itemHtml = itemMatch[1];
+        
+        const titleMatch = itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*class="[^"]*result-title[^"]*"[^>]*>([^<]+)<\/a>/s);
+        const priceMatch = itemHtml.match(/<span[^>]*class="[^"]*result-price[^"]*"[^>]*>\$([0-9,]+)/s);
+        
+        if (titleMatch && priceMatch) {
+          const url = titleMatch[1];
+          const title = titleMatch[2].trim();
+          const price = parseInt(priceMatch[1].replace(/,/g, ''));
+          
+          if (price > 0 && url && title) {
+            listings.push({
+              title: title.trim(),
+              price,
+              location: source,
+              url: url.startsWith('http') ? url : `https://craigslist.org${url}`,
+              source,
+              tier: 1
+            });
+          }
+        }
+      }
+    }
+
+    // Strategy 3: Ultra-simple regex fallback for any href + price pattern
+    if (listings.length === 0) {
+      console.log(`🔄 Trying regex fallback for Craigslist`);
+      const simplePattern = /href="([^"]*\.html[^"]*)"[^>]*>([^<]+)<.*?\$([0-9,]+)/gs;
+      let match;
+      while ((match = simplePattern.exec(html)) !== null) {
+        const url = match[1];
+        const title = match[2].trim();
+        const price = parseInt(match[3].replace(/,/g, ''));
+        
+        if (price > 0 && title && url && !title.includes('<')) {
+          listings.push({
+            title: title.trim(),
+            price,
+            location: source,
+            url: url.startsWith('http') ? url : `https://craigslist.org${url}`,
+            source,
+            tier: 1
+          });
+        }
+      }
+    }
+
+    if (listings.length === 0) {
+      console.log(`❌ No matching results found in ${source} HTML (${html.length} chars)`);
+      console.log(`📋 HTML sample: ${html.substring(0, 500)}...`);
+    } else {
+      console.log(`✅ Parsed ${listings.length} listings from ${source}`);
+    }
+
+  } catch (error) {
+    console.error(`💥 Craigslist parsing error for ${source}: ${error.message}`);
   }
   
   return listings;
