@@ -171,7 +171,29 @@ export const AdminDashboard = () => {
     console.log(`Manually invoking ${functionName}`);
     
     try {
-      const { data, error } = await supabase.functions.invoke(functionName);
+      let payload = {};
+      
+      // Different modules require different payloads
+      if (functionName === 'primary-search' || functionName === 'extended-search' || 
+          functionName === 'contextual-finder' || functionName === 'discovery-crawler') {
+        // These modules need to run for all active search configs
+        const activeConfigs = configs?.filter(config => config.is_active) || [];
+        if (activeConfigs.length === 0) {
+          console.warn(`No active search configs found for ${functionName}`);
+          return;
+        }
+        
+        // Run for the first active config as a test, or all configs
+        payload = { searchConfigId: activeConfigs[0].id };
+      } else if (functionName === 'notifier') {
+        // Notifier needs a type parameter
+        payload = { type: 'daily_digest' };
+      }
+      
+      const { data, error } = await supabase.functions.invoke(functionName, {
+        body: payload
+      });
+      
       if (error) {
         console.error(`Error invoking ${functionName}:`, error);
       } else {
