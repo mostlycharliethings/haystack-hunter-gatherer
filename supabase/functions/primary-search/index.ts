@@ -2,6 +2,26 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
+interface SearchConfig {
+  id: string;
+  brand: string;
+  model: string;
+  qualifier?: string;
+  sub_qualifier?: string;
+  price_threshold: number;
+  price_multiplier: number;
+  location?: string;
+}
+
+interface ScrapedListing {
+  title: string;
+  price: number;
+  location: string;
+  url: string;
+  source: string;
+  tier: number;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -148,4 +168,81 @@ function haversine(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) ** 2;
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+async function scrapeCraigslist(searchTerms: string[], config: SearchConfig): Promise<ScrapedListing[]> {
+  const listings: ScrapedListing[] = [];
+  const scraperApiKey = Deno.env.get('SCRAPER_API_KEY');
+
+  if (!scraperApiKey) {
+    throw new Error('SCRAPER_API_KEY not configured');
+  }
+
+  const regions = ['denver', 'boulder', 'fortcollins', 'pueblo'];
+
+  for (const region of regions) {
+    for (const term of searchTerms.slice(0, 2)) {
+      const searchUrl = `https://${region}.craigslist.org/search/sss?query=${encodeURIComponent(term)}`;
+      const proxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(searchUrl)}`;
+
+      try {
+        const response = await fetch(proxyUrl);
+        const html = await response.text();
+
+        // Debug output:
+        console.log(`--- RAW HTML from Craigslist [${region}] for term "${term}" ---`);
+        console.log(html.slice(0, 1000)); // Show first 1000 chars
+
+        if (!response.ok) {
+          console.error(`Non-OK response for ${region}: ${response.status}`);
+          continue;
+        }
+
+        const clListings = parseCraigslist(html, `Craigslist ${region}`);
+        if (clListings.length === 0) {
+          console.warn(`❌ No listings parsed for ${region} - possible HTML mismatch`);
+        } else {
+          console.log(`✅ ${clListings.length} listings parsed for ${region}`);
+        }
+
+        listings.push(...clListings);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      } catch (error) {
+        console.error(`Craigslist scraping error for ${region}:`, error);
+      }
+    }
+  }
+
+  return listings;
+}
+
+function parseCraigslist(html: string, source: string): ScrapedListing[] {
+  const listings: ScrapedListing[] = [];
+  
+  // Basic parser - this would need to be updated based on actual Craigslist HTML structure
+  const listingRegex = /<a href="([^"]+)" class="[^"]*result-title[^"]*"[^>]*>([^<]+)<\/a>/g;
+  const priceRegex = /\$(\d+(?:,\d{3})*)/;
+  
+  let match;
+  while ((match = listingRegex.exec(html)) !== null) {
+    const url = match[1];
+    const title = match[2];
+    
+    // Extract price (basic implementation)
+    const priceMatch = html.substr(match.index, 200).match(priceRegex);
+    const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) : 0;
+    
+    if (price > 0) {
+      listings.push({
+        title: title.trim(),
+        price,
+        location: source,
+        url: url.startsWith('http') ? url : `https://craigslist.org${url}`,
+        source,
+        tier: 1
+      });
+    }
+  }
+  
+  return listings;
 }
