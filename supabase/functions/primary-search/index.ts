@@ -55,10 +55,10 @@ serve(async (req) => {
     const startTime = Date.now();
     const maxPrice = Math.max(1, config.price_threshold * config.price_multiplier);
 
-    // Placeholder for scrapers
-    const fbResults = await fakeScraper("Facebook", terms);
-    const clResults = await fakeScraper("Craigslist", terms);
-    const ebResults = await fakeScraper("eBay", terms);
+    // Real scrapers
+    const fbResults = await scrapeFacebookMarketplace(terms, config);
+    const clResults = await scrapeCraigslist(terms, config);
+    const ebResults = await scrapeEbay(terms, config);
     results.push(...fbResults, ...clResults, ...ebResults);
 
     const filtered = results.filter(r => r.price >= 1 && r.price <= maxPrice);
