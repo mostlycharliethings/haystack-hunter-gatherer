@@ -59,13 +59,43 @@ serve(async (req) => {
     const marketplaces = await findSecondaryMarketplaces(searchConfig, category);
     console.log(`Found ${marketplaces.length} potential marketplaces`);
 
-    // Validate each marketplace
-    const validatedMarketplaces = await validateMarketplaces(marketplaces);
-    console.log(`${validatedMarketplaces.length} marketplaces validated successfully`);
+    // Validate each marketplace and save all results
+    const marketplaceResults = [];
+    for (const marketplace of marketplaces) {
+      if (!marketplace.url || !marketplace.name) continue;
+      
+      let validationPassed = false;
+      try {
+        // Simple validation - check if site returns 200 OK
+        const response = await fetch(marketplace.url, {
+          method: 'HEAD',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; HaystackBot/1.0)'
+          }
+        });
+        
+        if (response.ok) {
+          validationPassed = true;
+          console.log(`✓ Validated: ${marketplace.name} (${marketplace.url})`);
+        } else {
+          console.log(`✗ Failed validation: ${marketplace.name} (${response.status})`);
+        }
+      } catch (error) {
+        console.log(`✗ Failed validation: ${marketplace.name} (${error.message})`);
+      }
+      
+      marketplaceResults.push({
+        ...marketplace,
+        validationPassed
+      });
+      
+      // Rate limiting to be respectful
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
 
-    // Store results in secondary_sources
+    // Store ALL results in secondary_sources
     let savedCount = 0;
-    for (const marketplace of validatedMarketplaces) {
+    for (const marketplace of marketplaceResults) {
       try {
         const { error } = await supabaseClient
           .from('secondary_sources')
@@ -78,12 +108,14 @@ serve(async (req) => {
             url: marketplace.url,
             posted_at: new Date().toISOString(),
             context_type: category,
-            tier: 2 // Secondary source tier
+            tier: 2, // Secondary source tier
+            validation_passed: marketplace.validationPassed
           });
 
         if (!error) {
           savedCount++;
-          console.log(`✓ Saved marketplace: ${marketplace.name}`);
+          const status = marketplace.validationPassed ? '✓' : '✗';
+          console.log(`${status} Saved marketplace: ${marketplace.name} (validation: ${marketplace.validationPassed})`);
         } else {
           console.error(`✗ Failed to save marketplace ${marketplace.name}:`, error);
         }
@@ -106,7 +138,7 @@ serve(async (req) => {
       p_metadata: {
         category: category,
         marketplaces_found: marketplaces.length,
-        marketplaces_validated: validatedMarketplaces.length
+        marketplaces_validated: marketplaceResults.filter(m => m.validationPassed).length
       }
     });
 
@@ -253,36 +285,4 @@ Focus on specialized communities, forums with marketplaces, and niche platforms 
     console.error('Error finding secondary marketplaces:', error);
     return [];
   }
-}
-
-async function validateMarketplaces(marketplaces: any[]): Promise<any[]> {
-  const validatedMarketplaces = [];
-  
-  for (const marketplace of marketplaces) {
-    if (!marketplace.url || !marketplace.name) continue;
-    
-    try {
-      // Simple validation - check if site returns 200 OK
-      const response = await fetch(marketplace.url, {
-        method: 'HEAD',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; HaystackBot/1.0)'
-        }
-      });
-      
-      if (response.ok) {
-        validatedMarketplaces.push(marketplace);
-        console.log(`✓ Validated: ${marketplace.name} (${marketplace.url})`);
-      } else {
-        console.log(`✗ Failed validation: ${marketplace.name} (${response.status})`);
-      }
-    } catch (error) {
-      console.log(`✗ Failed validation: ${marketplace.name} (${error.message})`);
-    }
-    
-    // Rate limiting to be respectful
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-  
-  return validatedMarketplaces;
 }

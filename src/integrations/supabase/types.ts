@@ -264,6 +264,7 @@ export type Database = {
           tier: number
           title: string
           url: string
+          validation_passed: boolean | null
         }
         Insert: {
           context_type?: string | null
@@ -280,6 +281,7 @@ export type Database = {
           tier?: number
           title: string
           url: string
+          validation_passed?: boolean | null
         }
         Update: {
           context_type?: string | null
@@ -296,6 +298,7 @@ export type Database = {
           tier?: number
           title?: string
           url?: string
+          validation_passed?: boolean | null
         }
         Relationships: [
           {
