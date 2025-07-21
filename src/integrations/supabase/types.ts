@@ -97,7 +97,9 @@ export type Database = {
           distance: number | null
           id: string
           image_url: string | null
+          latitude: number | null
           location: string
+          longitude: number | null
           posted_at: string
           price: number
           search_config_id: string
@@ -111,7 +113,9 @@ export type Database = {
           distance?: number | null
           id?: string
           image_url?: string | null
+          latitude?: number | null
           location: string
+          longitude?: number | null
           posted_at: string
           price: number
           search_config_id: string
@@ -125,7 +129,9 @@ export type Database = {
           distance?: number | null
           id?: string
           image_url?: string | null
+          latitude?: number | null
           location?: string
+          longitude?: number | null
           posted_at?: string
           price?: number
           search_config_id?: string
@@ -445,6 +451,10 @@ export type Database = {
       text_to_bytea: {
         Args: { data: string }
         Returns: string
+      }
+      update_search_config_last_run: {
+        Args: { p_config_id: string }
+        Returns: undefined
       }
       urlencode: {
         Args: { data: Json } | { string: string } | { string: string }
