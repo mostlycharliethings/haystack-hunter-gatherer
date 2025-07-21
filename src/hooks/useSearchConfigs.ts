@@ -51,8 +51,8 @@ export function useSearchConfigs() {
       try {
         await supabase.functions.invoke('notifier', {
           body: { 
-            type: 'search_config_saved',
-            searchConfig: data
+            type: 'confirmation',
+            searchConfigId: data.id
           }
         });
       } catch (notifierError) {
