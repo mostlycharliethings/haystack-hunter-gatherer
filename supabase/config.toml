@@ -1,1 +1,4 @@
 project_id = "prgzopfgxpcmducwrpwl"
+
+[functions.widenet-explorer]
+verify_jwt = false

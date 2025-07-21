@@ -146,14 +146,17 @@ function buildSearchQuery(config: SearchConfig): string {
   if (config.sub_qualifier) parts.push(config.sub_qualifier);
   
   // Add marketplace-specific terms to find buy/sell listings
-  const marketplaceTerms = ['buy', 'sell', 'for sale', 'marketplace', 'used'];
+  const marketplaceTerms = ['for sale', 'buy', 'sell', 'marketplace', 'used', 'craigslist', 'facebook marketplace'];
   const randomTerm = marketplaceTerms[Math.floor(Math.random() * marketplaceTerms.length)];
   parts.push(randomTerm);
   
   // Add price context if threshold is reasonable
-  if (config.price_threshold && config.price_threshold < 10000) {
+  if (config.price_threshold && config.price_threshold < 50000) {
     parts.push(`under $${config.price_threshold}`);
   }
+  
+  // Add negative terms to filter out unwanted results
+  parts.push('-review -comparison -specs -manual');
   
   return parts.join(' ');
 }
@@ -162,10 +165,17 @@ async function performGoogleSearch(query: string): Promise<SearchResult[]> {
   const serpApiKey = Deno.env.get('SERPAPI_KEY');
   
   if (serpApiKey) {
+    console.log('Using SerpAPI for search');
     return await performSerpAPISearch(query, serpApiKey);
   } else {
-    console.log('SerpAPI key not found, using fallback search method');
-    return await performFallbackSearch(query);
+    console.log('SerpAPI key not found, attempting direct SERP scraping');
+    try {
+      return await performDirectSerpScraping(query);
+    } catch (error) {
+      console.error('Direct SERP scraping failed:', error);
+      console.log('Falling back to marketplace URL generation');
+      return await performFallbackSearch(query);
+    }
   }
 }
 
@@ -203,6 +213,124 @@ async function performSerpAPISearch(query: string, apiKey: string): Promise<Sear
     console.error('SerpAPI search failed:', error);
     return await performFallbackSearch(query);
   }
+}
+
+async function performDirectSerpScraping(query: string): Promise<SearchResult[]> {
+  console.log('Attempting direct Google SERP scraping');
+  
+  try {
+    const encodedQuery = encodeURIComponent(query);
+    const googleUrl = `https://www.google.com/search?q=${encodedQuery}&num=20&hl=en`;
+    
+    const response = await fetch(googleUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const html = await response.text();
+    return parseGoogleSearchResults(html, query);
+    
+  } catch (error) {
+    console.error('Direct SERP scraping error:', error);
+    throw error;
+  }
+}
+
+function parseGoogleSearchResults(html: string, query: string): SearchResult[] {
+  const results: SearchResult[] = [];
+  
+  // Simple regex patterns to extract search results
+  // Note: Google's HTML structure changes frequently, so this is a basic implementation
+  const titlePattern = /<h3[^>]*>.*?<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>.*?<\/h3>/gi;
+  const snippetPattern = /<span[^>]*class="[^"]*st[^"]*"[^>]*>(.*?)<\/span>/gi;
+  
+  let titleMatch;
+  let position = 1;
+  
+  while ((titleMatch = titlePattern.exec(html)) !== null && position <= 20) {
+    const url = titleMatch[1];
+    const title = titleMatch[2].replace(/<[^>]*>/g, ''); // Strip HTML tags
+    
+    // Skip Google's own URLs and ads
+    if (url.includes('google.com') || url.includes('googleadservices.com') || url.startsWith('/search')) {
+      continue;
+    }
+    
+    // Find corresponding snippet
+    let snippet = '';
+    const snippetMatch = snippetPattern.exec(html);
+    if (snippetMatch) {
+      snippet = snippetMatch[1].replace(/<[^>]*>/g, '').substring(0, 200);
+    }
+    
+    results.push({
+      title: title || 'No title',
+      url: url.startsWith('http') ? url : `https://${url}`,
+      snippet: snippet,
+      position: position++
+    });
+  }
+  
+  // If we didn't get enough results from regex parsing, generate some smart marketplace URLs
+  if (results.length < 5) {
+    const marketplaceUrls = generateSmartMarketplaceUrls(query);
+    for (let i = 0; i < marketplaceUrls.length && results.length < 15; i++) {
+      results.push({
+        ...marketplaceUrls[i],
+        position: results.length + 1
+      });
+    }
+  }
+  
+  return results;
+}
+
+function generateSmartMarketplaceUrls(query: string): Omit<SearchResult, 'position'>[] {
+  const encodedQuery = encodeURIComponent(query);
+  const marketplaces = [
+    {
+      domain: 'craigslist.org',
+      path: `/search/sss?query=${encodedQuery}`,
+      name: 'Craigslist'
+    },
+    {
+      domain: 'facebook.com',
+      path: `/marketplace/search/?query=${encodedQuery}`,
+      name: 'Facebook Marketplace'
+    },
+    {
+      domain: 'mercari.com',
+      path: `/search/?keyword=${encodedQuery}`,
+      name: 'Mercari'
+    },
+    {
+      domain: 'offerup.com',
+      path: `/search/?q=${encodedQuery}`,
+      name: 'OfferUp'
+    },
+    {
+      domain: 'ebay.com',
+      path: `/sch/i.html?_nkw=${encodedQuery}`,
+      name: 'eBay'
+    }
+  ];
+  
+  return marketplaces.map(marketplace => ({
+    title: `${query} on ${marketplace.name}`,
+    url: `https://${marketplace.domain}${marketplace.path}`,
+    snippet: `Search for "${query}" on ${marketplace.name} marketplace`
+  }));
 }
 
 async function performFallbackSearch(query: string): Promise<SearchResult[]> {
