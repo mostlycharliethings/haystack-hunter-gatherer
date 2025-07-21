@@ -6,7 +6,7 @@ import { SearchConfigList } from "../components/SearchConfigList";
 import { ListingsBrowser } from "../components/ListingsBrowser";
 import { LocationDisplay } from "@/components/LocationDisplay";
 import { VersionDisplay } from "@/components/VersionDisplay";
-import { Settings } from "lucide-react";
+import { Settings, Search, List, Grid3X3 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useSearchConfigs } from "@/hooks/useSearchConfigs";
 import { useListings } from "@/hooks/useListings";
@@ -135,9 +135,18 @@ export function OrchestratorPage() {
 
       <Tabs defaultValue="configure" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="configure">Configure</TabsTrigger>
-          <TabsTrigger value="searches">My Searches</TabsTrigger>
-          <TabsTrigger value="listings">Browse Listings</TabsTrigger>
+          <TabsTrigger value="configure" className="flex items-center gap-2">
+            <Search className="h-4 w-4" />
+            Configure
+          </TabsTrigger>
+          <TabsTrigger value="searches" className="flex items-center gap-2">
+            <List className="h-4 w-4" />
+            My Searches
+          </TabsTrigger>
+          <TabsTrigger value="listings" className="flex items-center gap-2">
+            <Grid3X3 className="h-4 w-4" />
+            Browse Listings
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="configure" className="space-y-6">
