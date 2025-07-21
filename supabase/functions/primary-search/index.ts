@@ -433,27 +433,26 @@ function parseEbay(html: string, source: string): ScrapedListing[] {
   console.log(`🔍 Starting eBay parsing for ${source}`);
   
   try {
-    // Strategy 1: Modern eBay search results structure
-    const itemPattern = /<div[^>]*class="[^"]*s-item[^"]*"[^>]*>(.*?)<\/div>/gs;
+    // Strategy 1: Standard li.s-item structure (most common)
+    const itemPattern = /<li[^>]*class="[^"]*s-item[^"]*"[^>]*>(.*?)<\/li>/gs;
     const items = [...html.matchAll(itemPattern)];
     
-    console.log(`📦 Found ${items.length} potential eBay item containers`);
+    console.log(`📦 Found ${items.length} li.s-item containers`);
     
     for (const itemMatch of items) {
       const itemHtml = itemMatch[1];
       
-      // Extract link and title
-      const linkMatch = itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*>.*?<span[^>]*role="heading"[^>]*>([^<]+)<\/span>/s) ||
-                       itemHtml.match(/<a[^>]*class="[^"]*s-item__link[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/s);
+      // Extract using expected selectors: a.s-item__link, h3.s-item__title, span.s-item__price
+      const linkMatch = itemHtml.match(/<a[^>]*class="[^"]*s-item__link[^"]*"[^>]*href="([^"]+)"/s);
+      const titleMatch = itemHtml.match(/<h3[^>]*class="[^"]*s-item__title[^"]*"[^>]*>([^<]+)<\/h3>/s) ||
+                         itemHtml.match(/<span[^>]*role="heading"[^>]*>([^<]+)<\/span>/s);
+      const priceMatch = itemHtml.match(/<span[^>]*class="[^"]*s-item__price[^"]*"[^>]*>[\$\s]*([0-9,]+\.?\d*)/s);
       
-      // Extract price with multiple patterns
-      const priceMatch = itemHtml.match(/<span[^>]*class="[^"]*s-item__price[^"]*"[^>]*>[\$\s]*([0-9,]+\.?\d*)/s) ||
-                         itemHtml.match(/<span[^>]*class="[^"]*notranslate[^"]*"[^>]*>[\$\s]*([0-9,]+\.?\d*)/s) ||
-                         itemHtml.match(/\$([0-9,]+\.?\d*)/);
+      console.log(`🔍 eBay - Link: ${linkMatch?.[1]}, Title: ${titleMatch?.[1]}, Price: ${priceMatch?.[1]}`);
       
-      if (linkMatch && priceMatch) {
+      if (linkMatch && titleMatch && priceMatch) {
         const url = linkMatch[1];
-        const title = linkMatch[2]?.replace(/<[^>]*>/g, '').trim() || 'eBay Listing';
+        const title = titleMatch[1].trim();
         const price = parseFloat(priceMatch[1].replace(/,/g, ''));
         
         if (price > 0 && url && title) {
@@ -465,6 +464,37 @@ function parseEbay(html: string, source: string): ScrapedListing[] {
             source,
             tier: 1
           });
+        }
+      }
+    }
+    
+    // Strategy 2: div.s-item fallback
+    if (listings.length === 0) {
+      console.log(`🔄 Trying div.s-item fallback for eBay`);
+      const divPattern = /<div[^>]*class="[^"]*s-item[^"]*"[^>]*>(.*?)<\/div>/gs;
+      const divItems = [...html.matchAll(divPattern)];
+      
+      for (const itemMatch of divItems) {
+        const itemHtml = itemMatch[1];
+        
+        const linkMatch = itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/s);
+        const priceMatch = itemHtml.match(/\$([0-9,]+\.?\d*)/);
+        
+        if (linkMatch && priceMatch) {
+          const url = linkMatch[1];
+          const title = linkMatch[2]?.replace(/<[^>]*>/g, '').trim() || 'eBay Listing';
+          const price = parseFloat(priceMatch[1].replace(/,/g, ''));
+          
+          if (price > 0 && url && title) {
+            listings.push({
+              title: title.trim(),
+              price,
+              location: source,
+              url: url.startsWith('http') ? url : `https://ebay.com${url}`,
+              source,
+              tier: 1
+            });
+          }
         }
       }
     }
