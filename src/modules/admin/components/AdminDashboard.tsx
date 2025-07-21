@@ -113,7 +113,7 @@ export const AdminDashboard = () => {
         {
           key: 'craigslist-searcher',
           name: 'Craigslist Searcher',
-          description: 'Location-prioritized Craigslist search engine'
+          description: 'Location-prioritized Craigslist search (<100mi, 101-500mi, 500+mi)'
         },
         {
           key: 'notifier',

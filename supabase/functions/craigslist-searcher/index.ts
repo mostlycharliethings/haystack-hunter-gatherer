@@ -92,37 +92,51 @@ Deno.serve(async (req) => {
       console.log(`📍 Using location context from search configs: ${searchConfigs[0].location}`);
     }
 
-    // Step 4: Get Craigslist areas prioritized by distance
-    const { data: nearbyAreas, error: nearbyError } = await supabase
+    // Step 4: Get Craigslist areas prioritized by distance using 3-tier system
+    const { data: tier1Areas, error: tier1Error } = await supabase
       .rpc('get_nearby_craigslist_areas', {
         user_lat: userLat,
         user_lon: userLon,
-        radius_miles: 100 // Start with 100 mile radius
+        radius_miles: 100 // Tier 1: <100 miles
       });
 
-    const { data: mediumAreas, error: mediumError } = await supabase
+    const { data: tier2Areas, error: tier2Error } = await supabase
       .rpc('get_nearby_craigslist_areas', {
         user_lat: userLat,
         user_lon: userLon,
-        radius_miles: 300 // Medium radius: 100-300 miles
+        radius_miles: 500 // Tier 2: 101-500 miles (will filter out tier 1)
       });
 
-    // Combine and deduplicate areas by distance priority
-    const prioritizedAreas = [
-      ...(nearbyAreas || []).slice(0, 10), // First tier: closest 10 areas
-      ...(mediumAreas || []).filter(area => 
-        !(nearbyAreas || []).some(near => near.area_id === area.area_id)
-      ).slice(0, 10), // Second tier: next 10 areas
-    ];
+    const { data: tier3Areas, error: tier3Error } = await supabase
+      .rpc('get_nearby_craigslist_areas', {
+        user_lat: userLat,
+        user_lon: userLon,
+        radius_miles: 2000 // Tier 3: 500+ miles (effectively nationwide)
+      });
+
+    // Organize areas by tiers, removing duplicates
+    const tier1 = (tier1Areas || []).slice(0, 8); // First 8 closest areas
+    const tier2 = (tier2Areas || [])
+      .filter(area => area.distance_miles > 100 && area.distance_miles <= 500)
+      .slice(0, 8); // Next 8 areas in 101-500 mile range
+    const tier3 = (tier3Areas || [])
+      .filter(area => area.distance_miles > 500)
+      .slice(0, 9); // Final 9 areas beyond 500 miles
+
+    // Combine all tiers for processing (total: 25 areas max)
+    const prioritizedAreas = [...tier1, ...tier2, ...tier3];
+
+    console.log(`📍 Location-based search: ${tier1.length} tier-1 (<100mi), ${tier2.length} tier-2 (101-500mi), ${tier3.length} tier-3 (500+mi) areas`);
 
     if (!prioritizedAreas || prioritizedAreas.length === 0) {
       // Fallback to any available areas
       const { data: fallbackAreas } = await supabase
         .from('craigslist_areas')
         .select('*')
-        .limit(20);
+        .limit(25);
       
       console.log('📍 Using fallback areas (no location-based prioritization)');
+      prioritizedAreas.push(...(fallbackAreas || []));
     }
 
     // Step 5: Process each search config across prioritized areas
