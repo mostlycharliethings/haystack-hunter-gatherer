@@ -144,6 +144,53 @@ export type Database = {
           },
         ]
       }
+      scrape_activity: {
+        Row: {
+          created_at: string
+          execution_time_ms: number | null
+          id: string
+          listings_found: number | null
+          message: string | null
+          metadata: Json | null
+          module_name: string
+          search_config_id: string | null
+          sources_processed: number | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          execution_time_ms?: number | null
+          id?: string
+          listings_found?: number | null
+          message?: string | null
+          metadata?: Json | null
+          module_name: string
+          search_config_id?: string | null
+          sources_processed?: number | null
+          status: string
+        }
+        Update: {
+          created_at?: string
+          execution_time_ms?: number | null
+          id?: string
+          listings_found?: number | null
+          message?: string | null
+          metadata?: Json | null
+          module_name?: string
+          search_config_id?: string | null
+          sources_processed?: number | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scrape_activity_search_config_id_fkey"
+            columns: ["search_config_id"]
+            isOneToOne: false
+            referencedRelation: "search_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       search_configs: {
         Row: {
           brand: string
@@ -326,6 +373,19 @@ export type Database = {
           description: string
           distance_miles: number
         }[]
+      }
+      log_scrape_activity: {
+        Args: {
+          p_module_name: string
+          p_search_config_id?: string
+          p_status?: string
+          p_message?: string
+          p_listings_found?: number
+          p_sources_processed?: number
+          p_execution_time_ms?: number
+          p_metadata?: Json
+        }
+        Returns: string
       }
     }
     Enums: {

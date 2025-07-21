@@ -40,101 +40,118 @@ export const AdminDashboard = () => {
   const { configs } = useSearchConfigs();
   const { listings } = useListings();
   
-  const [modules, setModules] = useState<ModuleStatus[]>([
-    {
-      name: 'Primary Search',
-      enabled: true,
-      lastRun: undefined,
-      successRate: 0,
-      description: 'Main search crawler for marketplace listings'
-    },
-    {
-      name: 'Extended Search',
-      enabled: true,
-      lastRun: undefined,
-      successRate: 0,
-      description: 'Secondary search with expanded parameters'
-    },
-    {
-      name: 'Discovery Crawler',
-      enabled: true,
-      lastRun: undefined,
-      successRate: 0,
-      description: 'New source discovery and validation'
-    },
-    {
-      name: 'Contextual Finder',
-      enabled: false,
-      lastRun: undefined,
-      successRate: 0,
-      description: 'AI-powered contextual search refinement'
-    },
-    {
-      name: 'Price Suggester',
-      enabled: true,
-      lastRun: undefined,
-      successRate: 0,
-      description: 'Dynamic price threshold recommendations'
-    },
-    {
-      name: 'Notifier',
-      enabled: true,
-      lastRun: undefined,
-      successRate: 0,
-      description: 'Email notification service'
-    }
-  ]);
+  const [modules, setModules] = useState<ModuleStatus[]>([]);
+  const [isLoadingModules, setIsLoadingModules] = useState(true);
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(true);
 
   useEffect(() => {
-    fetchEdgeFunctionLogs();
+    fetchModuleStatuses();
+    fetchActivityLogs();
   }, []);
 
-  const fetchEdgeFunctionLogs = async () => {
-    setIsLoadingLogs(true);
+  const fetchModuleStatuses = async () => {
+    setIsLoadingModules(true);
     try {
-      // Fetch logs from different edge functions
-      const functionNames = [
-        'primary-search',
-        'extended-search', 
-        'discovery-crawler',
-        'contextual-finder',
-        'price-suggester',
-        'notifier'
-      ];
+      // Get the latest activity for each module
+      const { data: activities, error } = await supabase
+        .from('scrape_activity')
+        .select('module_name, status, created_at, execution_time_ms')
+        .order('created_at', { ascending: false });
 
-      const allLogs: LogEntry[] = [];
-
-      for (const functionName of functionNames) {
-        try {
-          const { data } = await supabase.functions.invoke('get-function-logs', {
-            body: { functionName }
-          });
-          
-          if (data?.logs) {
-            const formattedLogs = data.logs.map((log: any, index: number) => ({
-              id: `${functionName}-${index}`,
-              timestamp: new Date(log.timestamp).toLocaleString(),
-              module: functionName.split('-').map((word: string) => 
-                word.charAt(0).toUpperCase() + word.slice(1)
-              ).join(' '),
-              level: log.level || 'INFO',
-              message: log.message || log.event_message || 'Execution completed'
-            }));
-            allLogs.push(...formattedLogs);
-          }
-        } catch (error) {
-          console.log(`No logs available for ${functionName}`);
-        }
+      if (error) {
+        console.error('Error fetching module statuses:', error);
+        return;
       }
 
-      // Sort by timestamp descending
-      allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setLogs(allLogs.slice(0, 50)); // Keep only recent 50 logs
+      // Calculate statistics for each module
+      const moduleData = [
+        {
+          name: 'Primary Search',
+          enabled: true,
+          description: 'Main search crawler for marketplace listings'
+        },
+        {
+          name: 'Extended Search', 
+          enabled: true,
+          description: 'Secondary search with expanded parameters'
+        },
+        {
+          name: 'Discovery Crawler',
+          enabled: true,
+          description: 'New source discovery and validation'
+        },
+        {
+          name: 'Contextual Finder',
+          enabled: true,
+          description: 'AI-powered contextual search refinement'
+        },
+        {
+          name: 'Price Suggester',
+          enabled: true,
+          description: 'Dynamic price threshold recommendations'
+        },
+        {
+          name: 'Notifier',
+          enabled: true,
+          description: 'Email notification service'
+        }
+      ];
+
+      const modulesWithStats = moduleData.map(module => {
+        const moduleActivities = activities?.filter(a => 
+          a.module_name?.toLowerCase().replace(/\s+/g, '-') === module.name.toLowerCase().replace(/\s+/g, '-')
+        ) || [];
+
+        const latestActivity = moduleActivities[0];
+        const successCount = moduleActivities.filter(a => a.status === 'success').length;
+        const totalCount = moduleActivities.length;
+
+        return {
+          ...module,
+          lastRun: latestActivity ? new Date(latestActivity.created_at).toLocaleString() : undefined,
+          successRate: totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0
+        };
+      });
+
+      setModules(modulesWithStats);
     } catch (error) {
-      console.error('Error fetching logs:', error);
+      console.error('Error fetching module statuses:', error);
+    } finally {
+      setIsLoadingModules(false);
+    }
+  };
+
+  const fetchActivityLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const { data: activities, error } = await supabase
+        .from('scrape_activity')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.error('Error fetching activity logs:', error);
+        setLogs([]);
+        return;
+      }
+
+      const formattedLogs: LogEntry[] = activities?.map(activity => ({
+        id: activity.id,
+        timestamp: new Date(activity.created_at).toLocaleString(),
+        module: activity.module_name.split('-').map((word: string) => 
+          word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' '),
+        level: activity.status === 'success' ? 'SUCCESS' : 
+               activity.status === 'failed' ? 'ERROR' : 'INFO',
+        message: activity.message || `${activity.status} - ${activity.listings_found || 0} listings found`
+      })) || [];
+
+      setLogs(formattedLogs);
+    } catch (error) {
+      console.error('Error fetching activity logs:', error);
       setLogs([]);
     } finally {
       setIsLoadingLogs(false);
@@ -159,8 +176,11 @@ export const AdminDashboard = () => {
         console.error(`Error invoking ${functionName}:`, error);
       } else {
         console.log(`Successfully invoked ${functionName}:`, data);
-        // Refresh logs after manual invocation
-        setTimeout(() => fetchEdgeFunctionLogs(), 2000);
+        // Refresh data after manual invocation
+        setTimeout(() => {
+          fetchModuleStatuses();
+          fetchActivityLogs();
+        }, 3000);
       }
     } catch (error) {
       console.error(`Failed to invoke ${functionName}:`, error);
@@ -243,7 +263,11 @@ export const AdminDashboard = () => {
         
         <TabsContent value="modules" className="space-y-4">
           <div className="grid gap-4">
-            {modules.map((module) => (
+            {isLoadingModules ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="text-muted-foreground">Loading module statuses...</div>
+              </div>
+            ) : modules.map((module) => (
               <Card key={module.name}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
