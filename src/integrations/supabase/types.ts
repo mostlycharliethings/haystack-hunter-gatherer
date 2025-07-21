@@ -459,6 +459,10 @@ export type Database = {
         Args: { data: string }
         Returns: string
       }
+      calculate_distance: {
+        Args: { lat1: number; lon1: number; lat2: number; lon2: number }
+        Returns: number
+      }
       get_nearby_craigslist_areas: {
         Args: { user_lat: number; user_lon: number; radius_miles?: number }
         Returns: {

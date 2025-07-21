@@ -111,6 +111,11 @@ export const AdminDashboard = () => {
           description: 'Dynamic price threshold recommendations'
         },
         {
+          key: 'craigslist-searcher',
+          name: 'Craigslist Searcher',
+          description: 'Location-prioritized Craigslist search engine'
+        },
+        {
           key: 'notifier',
           name: 'Notifier',
           description: 'Email notification service'
@@ -224,7 +229,7 @@ export const AdminDashboard = () => {
       // Different modules require different payloads
       if (functionName === 'primary-search' || functionName === 'extended-search' || 
           functionName === 'contextual-finder' || functionName === 'discovery-crawler' || 
-          functionName === 'widenet-explorer') {
+          functionName === 'widenet-explorer' || functionName === 'craigslist-searcher') {
         // These modules need to run for all active search configs
         const activeConfigs = configs?.filter(config => config.is_active) || [];
         if (activeConfigs.length === 0) {

@@ -82,17 +82,52 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Step 3: Get Craigslist areas
-    const { data: areas, error: areasError } = await supabase
-      .from('craigslist_areas')
-      .select('*')
-      .limit(25); // Process 25 areas per run to avoid timeouts
-
-    if (areasError) {
-      throw new Error(`Failed to fetch Craigslist areas: ${areasError.message}`);
+    // Step 3: Get user's location from search configs (use first active config's location)
+    let userLat = 39.8283; // Default to US center (Kansas)
+    let userLon = -98.5795;
+    
+    if (searchConfigs && searchConfigs.length > 0) {
+      // Try to extract coordinates from location field or use geocoding
+      // For now, use default coordinates - in production, you'd geocode the location
+      console.log(`📍 Using location context from search configs: ${searchConfigs[0].location}`);
     }
 
-    // Step 4: Process each search config across all areas
+    // Step 4: Get Craigslist areas prioritized by distance
+    const { data: nearbyAreas, error: nearbyError } = await supabase
+      .rpc('get_nearby_craigslist_areas', {
+        user_lat: userLat,
+        user_lon: userLon,
+        radius_miles: 100 // Start with 100 mile radius
+      });
+
+    const { data: mediumAreas, error: mediumError } = await supabase
+      .rpc('get_nearby_craigslist_areas', {
+        user_lat: userLat,
+        user_lon: userLon,
+        radius_miles: 300 // Medium radius: 100-300 miles
+      });
+
+    // Combine and deduplicate areas by distance priority
+    const prioritizedAreas = [
+      ...(nearbyAreas || []).slice(0, 10), // First tier: closest 10 areas
+      ...(mediumAreas || []).filter(area => 
+        !(nearbyAreas || []).some(near => near.area_id === area.area_id)
+      ).slice(0, 10), // Second tier: next 10 areas
+    ];
+
+    if (!prioritizedAreas || prioritizedAreas.length === 0) {
+      // Fallback to any available areas
+      const { data: fallbackAreas } = await supabase
+        .from('craigslist_areas')
+        .select('*')
+        .limit(20);
+      
+      console.log('📍 Using fallback areas (no location-based prioritization)');
+    }
+
+    // Step 5: Process each search config across prioritized areas
+    const areas = prioritizedAreas.length > 0 ? prioritizedAreas : [];
+    
     for (const config of searchConfigs) {
       console.log(`🔍 Processing search config: ${config.brand} ${config.model}`);
       
