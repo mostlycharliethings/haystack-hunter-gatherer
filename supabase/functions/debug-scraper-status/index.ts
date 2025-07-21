@@ -1,4 +1,3 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
@@ -18,112 +17,51 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Get system status
+    // Get counts and recent activity
     const [
-      { data: listingsCount },
-      { data: secondaryCount },
-      { data: tertiaryCount },
-      { data: searchConfigsCount },
+      { count: listingsCount },
+      { count: secondaryCount }, 
+      { count: tertiaryCount },
       { data: recentActivity },
+      { data: listingsByTier },
       { data: failedSources },
-      { data: searchableSources }
+      { data: nonSearchableSources }
     ] = await Promise.all([
       supabase.from('listings').select('*', { count: 'exact', head: true }),
       supabase.from('secondary_sources').select('*', { count: 'exact', head: true }),
       supabase.from('tertiary_sources').select('*', { count: 'exact', head: true }),
-      supabase.from('search_configs').select('*', { count: 'exact', head: true }),
-      supabase
-        .from('scrape_activity')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10),
-      supabase
-        .from('scrape_activity')
-        .select('*')
-        .eq('status', 'source_failed')
-        .order('created_at', { ascending: false })
-        .limit(10),
-      supabase
-        .from('secondary_sources')
-        .select('url, source, searchable')
-        .order('discovered_at', { ascending: false })
-        .limit(20)
+      supabase.from('scrape_activity').select('*').order('created_at', { ascending: false }).limit(10),
+      supabase.from('listings').select('tier, source, search_config_id'),
+      supabase.from('scrape_activity').select('metadata').eq('status', 'source_failed').gte('created_at', new Date(Date.now() - 3600000).toISOString()),
+      supabase.from('secondary_sources').select('source, url, searchable').eq('searchable', false)
     ]);
 
-    // Get tier breakdown
-    const { data: tierBreakdown } = await supabase
-      .from('listings')
-      .select('tier')
-      .then(result => {
-        const breakdown = { tier1: 0, tier2: 0, tier3: 0 };
-        result.data?.forEach(listing => {
-          if (listing.tier === 1) breakdown.tier1++;
-          else if (listing.tier === 2) breakdown.tier2++;
-          else if (listing.tier === 3) breakdown.tier3++;
-        });
-        return { data: breakdown };
-      });
-
-    // Get latest failures by source
-    const failuresBySource = failedSources?.reduce((acc, activity) => {
-      const sourceName = activity.metadata?.source_name || 'Unknown';
-      if (!acc[sourceName]) {
-        acc[sourceName] = [];
-      }
-      acc[sourceName].push({
-        reason: activity.metadata?.failure_reason || activity.message,
-        time: activity.created_at
-      });
+    const tierCounts = listingsByTier?.reduce((acc: any, l: any) => {
+      acc[`tier_${l.tier}`] = (acc[`tier_${l.tier}`] || 0) + 1;
       return acc;
     }, {});
 
-    const status = {
-      timestamp: new Date().toISOString(),
-      data_counts: {
-        total_listings: listingsCount?.count || 0,
-        secondary_sources: secondaryCount?.count || 0,
-        tertiary_sources: tertiaryCount?.count || 0,
-        search_configs: searchConfigsCount?.count || 0
-      },
-      listings_by_tier: tierBreakdown || { tier1: 0, tier2: 0, tier3: 0 },
-      recent_activity: recentActivity?.map(activity => ({
-        module: activity.module_name,
-        status: activity.status,
-        message: activity.message,
-        listings_found: activity.listings_found,
-        time: activity.created_at
-      })) || [],
-      source_failures: failuresBySource || {},
-      source_searchability: searchableSources?.map(source => ({
-        url: source.url,
-        name: source.source,
-        searchable: source.searchable
-      })) || [],
-      expected_data_flow: {
-        primary_search: "Should populate listings table with tier 1 data (Craigslist, FB, eBay)",
-        extended_search: "Should populate listings table with tier 2 data (searchable marketplaces)",
-        contextual_finder: "Should add new secondary_sources",
-        discovery_crawler: "Should add new tertiary_sources AND insert tier 3 listings"
-      }
-    };
+    const failureReasons = failedSources?.map((f: any) => f.metadata).filter(Boolean);
 
-    return new Response(
-      JSON.stringify(status, null, 2),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    );
+    return new Response(JSON.stringify({
+      summary: {
+        total_listings: listingsCount || 0,
+        secondary_sources: secondaryCount || 0,
+        tertiary_sources: tertiaryCount || 0,
+        non_searchable_sources: nonSearchableSources?.length || 0
+      },
+      listings_by_tier: tierCounts || {},
+      recent_failures: failureReasons || [],
+      non_searchable_sources: nonSearchableSources || [],
+      recent_activity: recentActivity || []
+    }, null, 2), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
 
   } catch (error) {
-    console.error('Debug status error:', error);
-    
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      }
-    );
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    });
   }
 });
