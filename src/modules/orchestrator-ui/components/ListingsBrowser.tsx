@@ -3,7 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ExternalLink, MapPin, DollarSign, Calendar } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ExternalLink, MapPin, DollarSign, Calendar, Globe, ChevronDown, ChevronUp } from "lucide-react";
+import { WidenetResults } from "@/components/WidenetResults";
 
 interface Listing {
   id: string;
@@ -20,17 +22,55 @@ interface Listing {
   searchConfigName: string;
 }
 
+interface SearchConfig {
+  id: string;
+  brand: string;
+  model: string;
+  qualifier?: string;
+  subQualifier?: string;
+  yearStart?: string;
+  yearEnd?: string;
+  priceThreshold: number;
+  priceMultiplier: number;
+  location?: string;
+  isActive: boolean;
+  createdAt: string;
+  lastRun?: string;
+  listingCount: number;
+}
+
 interface ListingsBrowserProps {
   listings: Listing[];
+  configs: SearchConfig[];
   loading?: boolean;
   onListingClick: (listing: Listing) => void;
 }
 
 type SortOption = "price-asc" | "price-desc" | "distance-asc" | "distance-desc" | "tier-asc" | "posted-desc";
 
-export function ListingsBrowser({ listings, loading, onListingClick }: ListingsBrowserProps) {
+export function ListingsBrowser({ listings, configs, loading, onListingClick }: ListingsBrowserProps) {
   const [sortBy, setSortBy] = useState<SortOption>("posted-desc");
   const [filterTier, setFilterTier] = useState<string>("all");
+  const [expandedConfigs, setExpandedConfigs] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (configId: string) => {
+    setExpandedConfigs(prev => {
+      const next = new Set(prev);
+      if (next.has(configId)) {
+        next.delete(configId);
+      } else {
+        next.add(configId);
+      }
+      return next;
+    });
+  };
+
+  const formatSearchTerm = (config: SearchConfig) => {
+    const parts = [config.brand, config.model];
+    if (config.qualifier) parts.push(config.qualifier);
+    if (config.subQualifier) parts.push(config.subQualifier);
+    return parts.join(" ");
+  };
 
   const getTierLabel = (tier: number) => {
     switch (tier) {
@@ -202,6 +242,58 @@ export function ListingsBrowser({ listings, loading, onListingClick }: ListingsB
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {/* WideNet Results Section */}
+      {configs && configs.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold">WideNet Search Results</h2>
+            <Badge variant="secondary">{configs.length} configurations</Badge>
+          </div>
+          
+          <div className="grid gap-4">
+            {configs.map((config) => (
+              <Card key={config.id} className="border-blue-200">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Globe className="h-5 w-5" />
+                      {formatSearchTerm(config)}
+                    </CardTitle>
+                    <Collapsible open={expandedConfigs.has(config.id)}>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleExpanded(config.id)}
+                        >
+                          View Results
+                          {expandedConfigs.has(config.id) ? (
+                            <ChevronUp className="h-4 w-4 ml-1" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 ml-1" />
+                          )}
+                        </Button>
+                      </CollapsibleTrigger>
+                    </Collapsible>
+                  </div>
+                </CardHeader>
+                
+                <Collapsible open={expandedConfigs.has(config.id)}>
+                  <CollapsibleContent>
+                    <CardContent className="pt-0">
+                      <WidenetResults 
+                        searchConfigId={config.id}
+                        searchConfigName={formatSearchTerm(config)}
+                      />
+                    </CardContent>
+                  </CollapsibleContent>
+                </Collapsible>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
     </div>

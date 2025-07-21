@@ -208,6 +208,22 @@ export function OrchestratorPage() {
 
         <TabsContent value="listings" className="space-y-6">
           <ListingsBrowser
+            configs={configs.map(config => ({
+              id: config.id,
+              brand: config.brand,
+              model: config.model,
+              qualifier: config.qualifier || undefined,
+              subQualifier: config.sub_qualifier || undefined,
+              yearStart: config.year_start?.toString(),
+              yearEnd: config.year_end?.toString(),
+              priceThreshold: config.price_threshold,
+              priceMultiplier: config.price_multiplier,
+              location: config.location,
+              isActive: config.is_active,
+              createdAt: config.created_at,
+              lastRun: config.updated_at,
+              listingCount: 0, // TODO: Add actual count from listings
+            }))}
             listings={listings.map(listing => ({
               id: listing.id,
               title: listing.title,
