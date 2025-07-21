@@ -71,7 +71,7 @@ serve(async (req: Request) => {
     for (const site of validatedSites) {
       try {
         // Insert marketplace metadata with a dummy search_config_id (use first active config)
-        const { error: siteError } = await supabase.from("tertiary_sources").insert({
+        const { error: siteError } = await supabase.from("tertiary_sources").upsert({
           search_config_id: searchConfigs[0].id, // Use first active config for metadata
           title: `${site.name} - Marketplace`,
           price: 0, // Not applicable for marketplace metadata
@@ -83,6 +83,9 @@ serve(async (req: Request) => {
           relevance_score: (site.freshness_score + site.reliability_score) / 200,
           discovery_type: 'marketplace_metadata',
           tier: 3
+        }, {
+          onConflict: "url",
+          ignoreDuplicates: true,
         });
 
         if (siteError && !siteError.message.includes('duplicate')) {
