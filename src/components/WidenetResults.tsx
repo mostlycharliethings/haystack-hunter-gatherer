@@ -126,7 +126,18 @@ export const WidenetResults = ({ searchConfigId, searchConfigName }: WidenetResu
                     )}
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <ExternalLink className="h-3 w-3" />
-                      <span className="truncate">{result.url}</span>
+                      <a 
+                        href={result.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="truncate hover:text-primary underline decoration-1 underline-offset-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markAsVisited(result.id);
+                        }}
+                      >
+                        {result.url}
+                      </a>
                     </div>
                     {result.notes && (
                       <div className="flex items-start gap-1 text-xs">
