@@ -67,15 +67,39 @@ serve(async (req: Request) => {
       throw new Error('No active search configs found');
     }
 
-    // For each validated site, try to scrape listings for each search config
+    // Save discovered marketplace sites to tertiary_sources (metadata only)
+    for (const site of validatedSites) {
+      const { error: siteError } = await supabase.from("tertiary_sources").upsert({
+        search_config_id: null, // Site metadata not tied to specific config
+        title: site.name,
+        price: 0, // Not applicable for marketplace metadata
+        location: site.description || 'Colorado',
+        source: 'discovery-crawler',
+        url: site.url,
+        posted_at: new Date().toISOString(),
+        discovered_at: new Date().toISOString(),
+        relevance_score: (site.freshness_score + site.reliability_score) / 200,
+        discovery_type: 'crawler',
+        tier: 3
+      }, {
+        onConflict: "url",
+        ignoreDuplicates: true,
+      });
+
+      if (siteError) {
+        console.log(`Failed to save site metadata for ${site.name}:`, siteError.message);
+      }
+    }
+
+    // Now scrape actual listings from validated sites and save to listings table
     for (const site of validatedSites) {
       for (const config of searchConfigs) {
         try {
           const scrapedListings = await scrapeDiscoveredSite(site, config);
           
-          // Save listings to tertiary_sources table
+          // Save actual listings to listings table
           for (const listing of scrapedListings) {
-            const { error } = await supabase.from("tertiary_sources").upsert({
+            const { error } = await supabase.from("listings").upsert({
               search_config_id: config.id,
               title: listing.title,
               price: listing.price,
@@ -86,8 +110,6 @@ serve(async (req: Request) => {
               image_url: listing.image_url || null,
               posted_at: listing.posted_at || new Date().toISOString(),
               discovered_at: new Date().toISOString(),
-              relevance_score: listing.relevance_score || 0.3,
-              discovery_type: 'crawler',
               tier: 3
             }, {
               onConflict: "url",
