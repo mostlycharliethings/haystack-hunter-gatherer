@@ -8,30 +8,54 @@ const corsHeaders = {
 };
 
 const GPT_SYSTEM_PROMPT = `
-You are an expert at finding real, active marketplace websites where people buy and sell items in Colorado.
-Focus on legitimate websites with actual search functionality and recent listings.
-Include both general marketplaces and specialized sites (bikes, cars, electronics, etc.).
+You are an expert internet sleuth tasked with discovering unusual, obscure, or local websites where people in Colorado might post items for sale. These could include:
+
+Community bulletin boards
+Local classifieds
+Estate sale listings
+Antique Stores
+Pawnshops
+Forum-based marketplaces
+Hobbyist sites with active For Sale sections
+Church or club sale pages
+Hyperlocal Facebook Groups (if public)
+Rural or regional aggregators
+
+Prioritize unusual or overlooked sources, not major platforms like Craigslist, eBay, or B&H.
+
+Assume the goal is to uncover hidden marketplaces, the "nooks and crannies" of the internet where unexpected deals might surface.
 `;
 
 const GPT_USER_PROMPT = `
-Find 8-12 real marketplace websites for Colorado where people can search for items to buy.
-Include both general marketplaces and category-specific sites (cycling, automotive, electronics, sports equipment, etc.).
+Identify 10–15 obscure, hyperlocal, or niche websites (not mainstream marketplaces) where people in Colorado might sell or list used items, estate sales, hobby gear, or hard-to-find items.
 
-For each site, provide the exact search URL format that can be used to find listings.
+Focus on:
+- Smaller Colorado towns
+- Region-specific forums
+- Local newspapers with classifieds
+- Auctioneers or estate sale firms
+- Specialized enthusiast sites
 
-Return in JSON array format:
+Return a JSON array like this:
+
 [
   {
-    "name": "exact site name", 
-    "search_url": "https://example.com/search?q={query}&location=colorado",
-    "category": "General/Cycling/Automotive/Electronics/etc",
-    "description": "brief description of site focus",
+    "name": "Western Slope Classifieds",
+    "search_url": "https://classifieds.westernslope.com/search/{query}",
+    "category": "Regional / General",
+    "description": "Classified section of a small Colorado newspaper",
     "searchable": true
+  },
+  {
+    "name": "Front Range Farm Estate Sales",
+    "search_url": "https://frfarmauctions.com/search?q={query}",
+    "category": "Estate Sales / Agriculture",
+    "description": "Farm and ranch estate sales site in rural Colorado",
+    "searchable": false
   }
 ]
 
-Make sure search_url contains {query} placeholder and location parameters for Colorado when possible.
-Only include sites that actually exist and have active listings.
+Include a mix of searchable = true and false — even if a site isn't queryable, it may still be valuable for scraping or crawling manually later.
 `;
 
 serve(async (req: Request) => {
