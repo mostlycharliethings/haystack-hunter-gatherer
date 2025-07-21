@@ -308,77 +308,92 @@ function parseFacebookMarketplace(html: string, source: string): ScrapedListing[
   console.log(`🔍 Starting Facebook Marketplace parsing for ${source}`);
   
   try {
-    // Strategy 1: JSON-LD structured data
-    const jsonLdMatches = html.match(/<script type="application\/ld\+json"[^>]*>(.*?)<\/script>/gs);
-    if (jsonLdMatches) {
-      console.log(`📄 Found ${jsonLdMatches.length} JSON-LD scripts in Facebook HTML`);
-      for (const jsonScript of jsonLdMatches) {
-        try {
-          const jsonContent = jsonScript.replace(/<script[^>]*>|<\/script>/g, '');
-          const data = JSON.parse(jsonContent);
-          if (data['@type'] === 'Product' || data.offers) {
-            const title = data.name || data.headline || 'Facebook Marketplace Listing';
-            const priceObj = data.offers?.price || data.price;
-            const price = parseFloat(priceObj?.toString().replace(/[^0-9.]/g, '') || '0');
-            const url = data.url || `https://facebook.com/marketplace/item/${Date.now()}`;
+    // Strategy 1: Direct link extraction with marketplace URLs
+    const linkPattern = /<a[^>]*href="([^"]*marketplace[^"]*item[^"]*)"[^>]*>(.*?)<\/a>/gs;
+    const linkMatches = [...html.matchAll(linkPattern)];
+    
+    console.log(`🔗 Found ${linkMatches.length} Facebook Marketplace links`);
+    
+    for (const linkMatch of linkMatches) {
+      const url = linkMatch[1];
+      const linkContent = linkMatch[2];
+      
+      // Extract title and price from link content or surrounding HTML
+      const titleMatch = linkContent.match(/<span[^>]*>([^<]+)<\/span>/) || 
+                        linkContent.match(/aria-label="([^"]+)"/) ||
+                        linkContent.match(/>([^<]+)</);
+      const priceMatch = linkContent.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+      
+      if (titleMatch && priceMatch && url) {
+        const title = titleMatch[1].replace(/['"]/g, '').trim();
+        const price = parseFloat(priceMatch[1].replace(/,/g, ''));
+        
+        if (price > 0 && title && title.length > 3) {
+          listings.push({
+            title: title.trim(),
+            price,
+            location: source,
+            url: url.startsWith('http') ? url : `https://facebook.com${url}`,
+            source,
+            tier: 1
+          });
+        }
+      }
+    }
+
+    // Strategy 2: JSON data extraction with URL matching
+    if (listings.length === 0) {
+      console.log(`🔄 Trying JSON data extraction for Facebook`);
+      const jsonMatches = html.match(/"marketplace_listing_title":"([^"]+)"[^}]*"listing_id":"([^"]+)"[^}]*"listing_price":\s*{[^}]*"amount":\s*"?(\d+)"?/g);
+      if (jsonMatches) {
+        for (const match of jsonMatches) {
+          const titleMatch = match.match(/"marketplace_listing_title":"([^"]+)"/);
+          const listingIdMatch = match.match(/"listing_id":"([^"]+)"/);
+          const priceMatch = match.match(/"amount":\s*"?(\d+)"?/);
+          
+          if (titleMatch && priceMatch && listingIdMatch) {
+            const title = titleMatch[1];
+            const price = parseInt(priceMatch[1]);
+            const listingId = listingIdMatch[1];
             
             if (price > 0 && title) {
-              listings.push({ title: title.trim(), price, location: source, url, source, tier: 1 });
+              listings.push({
+                title: title.trim(),
+                price,
+                location: source,
+                url: `https://facebook.com/marketplace/item/${listingId}`,
+                source,
+                tier: 1
+              });
             }
           }
-        } catch (e) {
-          console.log(`⚠️ Failed to parse JSON-LD: ${e.message}`);
         }
       }
     }
 
-    // Strategy 2: React props and data attributes
-    const reactDataMatches = html.match(/"marketplace_listing_title":"([^"]+)"|"listing_price":\s*{[^}]*"amount":\s*"?(\d+)"?/g);
-    if (reactDataMatches && reactDataMatches.length > 0) {
-      console.log(`📱 Found ${reactDataMatches.length} React data patterns in Facebook HTML`);
-      let titleMatch, priceMatch;
-      for (const match of reactDataMatches) {
-        if (match.includes('marketplace_listing_title')) {
-          titleMatch = match.match(/"marketplace_listing_title":"([^"]+)"/);
-        }
-        if (match.includes('listing_price')) {
-          priceMatch = match.match(/"amount":\s*"?(\d+)"?/);
-        }
+    // Strategy 3: Meta tags with URL extraction
+    if (listings.length === 0) {
+      console.log(`🔄 Trying meta tag extraction for Facebook`);
+      const metaUrlMatch = html.match(/<meta[^>]*property="og:url"[^>]*content="([^"]+)"/);
+      const metaPriceMatch = html.match(/<meta[^>]*property="product:price:amount"[^>]*content="([^"]+)"/);
+      const metaTitleMatch = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]+)"/);
+      
+      if (metaPriceMatch && metaTitleMatch && metaUrlMatch) {
+        console.log(`🏷️ Found meta property data in Facebook HTML`);
+        const title = metaTitleMatch[1];
+        const price = parseFloat(metaPriceMatch[1]);
+        const url = metaUrlMatch[1];
         
-        if (titleMatch && priceMatch) {
-          const title = titleMatch[1];
-          const price = parseInt(priceMatch[1]);
-          if (price > 0 && title) {
-            listings.push({
-              title: title.trim(),
-              price,
-              location: source,
-              url: `https://facebook.com/marketplace/item/${Date.now()}`,
-              source,
-              tier: 1
-            });
-          }
-          titleMatch = priceMatch = null;
+        if (price > 0 && title && url) {
+          listings.push({
+            title: title.trim(),
+            price,
+            location: source,
+            url: url,
+            source,
+            tier: 1
+          });
         }
-      }
-    }
-
-    // Strategy 3: Meta property tags
-    const metaPriceMatch = html.match(/<meta[^>]*property="product:price:amount"[^>]*content="([^"]+)"/);
-    const metaTitleMatch = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]+)"/);
-    if (metaPriceMatch && metaTitleMatch) {
-      console.log(`🏷️ Found meta property data in Facebook HTML`);
-      const title = metaTitleMatch[1];
-      const price = parseFloat(metaPriceMatch[1]);
-      if (price > 0 && title) {
-        listings.push({
-          title: title.trim(),
-          price,
-          location: source,
-          url: `https://facebook.com/marketplace/item/${Date.now()}`,
-          source,
-          tier: 1
-        });
       }
     }
 
@@ -456,12 +471,16 @@ function parseEbay(html: string, source: string): ScrapedListing[] {
                   const title = titleMatch[1];
                   const price = parseFloat(priceMatch[1]);
                   
+                  // Try to extract URL from JSON context
+                  const urlMatch = jsonContent.match(/"webUrl":"([^"]*ebay[^"]*itm[^"]*?)"/);
+                  const extractedUrl = urlMatch ? urlMatch[1].replace(/\\/g, '') : null;
+                  
                   if (price > 0 && title) {
                     listings.push({
                       title: title.trim(),
                       price,
                       location: source,
-                      url: `https://ebay.com/itm/${Date.now()}`,
+                      url: extractedUrl || `https://ebay.com/sch/i.html?_nkw=${encodeURIComponent(title)}`,
                       source,
                       tier: 1
                     });
@@ -527,9 +546,10 @@ function parseCraigslist(html: string, source: string): ScrapedListing[] {
     for (const itemMatch of items) {
       const itemHtml = itemMatch[1];
       
-      // Extract title and link
+      // Extract title and link with improved patterns
       const titleMatch = itemHtml.match(/<a[^>]*class="[^"]*cl-app-anchor[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/s) ||
-                        itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*title="([^"]+)"/s);
+                        itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*title="([^"]+)"/s) ||
+                        itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/s);
       
       // Extract price with multiple patterns
       const priceMatch = itemHtml.match(/<span[^>]*class="[^"]*result-price[^"]*"[^>]*>\$([0-9,]+)/s) ||
@@ -541,11 +561,16 @@ function parseCraigslist(html: string, source: string): ScrapedListing[] {
         const price = parseInt(priceMatch[1].replace(/,/g, ''));
         
         if (price > 0 && url && title) {
+          // Ensure proper Craigslist URL formatting
+          const properUrl = url.startsWith('http') ? url : 
+                           url.startsWith('/') ? `https://${source.replace('Craigslist ', '').toLowerCase()}.craigslist.org${url}` :
+                           `https://${source.replace('Craigslist ', '').toLowerCase()}.craigslist.org/${url}`;
+          
           listings.push({
             title: title.trim(),
             price,
             location: source,
-            url: url.startsWith('http') ? url : `https://craigslist.org${url}`,
+            url: properUrl,
             source,
             tier: 1
           });
