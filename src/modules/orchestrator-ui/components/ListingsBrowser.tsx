@@ -262,22 +262,24 @@ export function ListingsBrowser({ listings, configs, loading, onListingClick }: 
                       <Globe className="h-5 w-5" />
                       {formatSearchTerm(config)}
                     </CardTitle>
-                    <Collapsible open={expandedConfigs.has(config.id)}>
-                      <CollapsibleTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggleExpanded(config.id)}
-                        >
-                          View Results
-                          {expandedConfigs.has(config.id) ? (
-                            <ChevronUp className="h-4 w-4 ml-1" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 ml-1" />
-                          )}
-                        </Button>
-                      </CollapsibleTrigger>
-                    </Collapsible>
+                    <div className="flex items-center">
+                      <Collapsible open={expandedConfigs.has(config.id)}>
+                        <CollapsibleTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => toggleExpanded(config.id)}
+                          >
+                            View Results
+                            {expandedConfigs.has(config.id) ? (
+                              <ChevronUp className="h-4 w-4 ml-1" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 ml-1" />
+                            )}
+                          </Button>
+                        </CollapsibleTrigger>
+                      </Collapsible>
+                    </div>
                   </div>
                 </CardHeader>
                 
