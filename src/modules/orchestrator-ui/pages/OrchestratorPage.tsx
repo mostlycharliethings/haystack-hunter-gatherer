@@ -119,13 +119,7 @@ export function OrchestratorPage() {
                 className="max-h-16 w-auto"
               />
             </div>
-            <div className="flex-1 flex items-center justify-end gap-4">
-              <Link to="/admin">
-                <Button variant="outline" size="sm">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Admin
-                </Button>
-              </Link>
+            <div className="flex-1 flex items-center justify-end">
               <VersionDisplay />
             </div>
           </div>
@@ -225,6 +219,20 @@ export function OrchestratorPage() {
         </TabsContent>
       </Tabs>
       </div>
+      
+      {/* Admin button at bottom of page */}
+      <footer className="mt-12 py-8 border-t bg-muted/30">
+        <div className="container mx-auto px-4">
+          <div className="flex justify-center">
+            <Link to="/admin">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                <Settings className="h-4 w-4 mr-2" />
+                Admin
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
