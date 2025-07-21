@@ -69,25 +69,29 @@ serve(async (req: Request) => {
 
     // Save discovered marketplace sites to tertiary_sources (metadata only)
     for (const site of validatedSites) {
-      const { error: siteError } = await supabase.from("tertiary_sources").upsert({
-        search_config_id: null, // Site metadata not tied to specific config
-        title: site.name,
-        price: 0, // Not applicable for marketplace metadata
-        location: site.description || 'Colorado',
-        source: 'discovery-crawler',
-        url: site.url,
-        posted_at: new Date().toISOString(),
-        discovered_at: new Date().toISOString(),
-        relevance_score: (site.freshness_score + site.reliability_score) / 200,
-        discovery_type: 'crawler',
-        tier: 3
-      }, {
-        onConflict: "url",
-        ignoreDuplicates: true,
-      });
+      try {
+        // Insert marketplace metadata with a dummy search_config_id (use first active config)
+        const { error: siteError } = await supabase.from("tertiary_sources").insert({
+          search_config_id: searchConfigs[0].id, // Use first active config for metadata
+          title: `${site.name} - Marketplace`,
+          price: 0, // Not applicable for marketplace metadata
+          location: site.description || 'Colorado',
+          source: 'discovery-crawler',
+          url: site.url.trim().toLowerCase(),
+          posted_at: new Date().toISOString(),
+          discovered_at: new Date().toISOString(),
+          relevance_score: (site.freshness_score + site.reliability_score) / 200,
+          discovery_type: 'marketplace_metadata',
+          tier: 3
+        });
 
-      if (siteError) {
-        console.log(`Failed to save site metadata for ${site.name}:`, siteError.message);
+        if (siteError && !siteError.message.includes('duplicate')) {
+          console.log(`Failed to save site metadata for ${site.name}:`, siteError.message);
+        } else {
+          console.log(`✅ Saved marketplace metadata: ${site.name}`);
+        }
+      } catch (error) {
+        console.log(`❌ Error saving metadata for ${site.name}:`, error.message);
       }
     }
 
