@@ -24,6 +24,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 interface ModuleStatus {
   name: string;
+  key: string;
   enabled: boolean;
   lastRun?: string;
   successRate: number;
@@ -56,59 +57,73 @@ export const AdminDashboard = () => {
   const fetchModuleStatuses = async () => {
     setIsLoadingModules(true);
     try {
+      // Get module settings from the database
+      const { data: moduleSettings, error: settingsError } = await supabase
+        .from('module_settings')
+        .select('module_name, enabled');
+
+      if (settingsError) {
+        console.error('Error fetching module settings:', settingsError);
+        return;
+      }
+
       // Get the latest activity for each module
-      const { data: activities, error } = await supabase
+      const { data: activities, error: activitiesError } = await supabase
         .from('scrape_activity')
         .select('module_name, status, created_at, execution_time_ms')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching module statuses:', error);
+      if (activitiesError) {
+        console.error('Error fetching module activities:', activitiesError);
         return;
       }
 
-      // Calculate statistics for each module
-      const moduleData = [
+      // Module definitions with descriptions
+      const moduleDefinitions = [
         {
+          key: 'primary-search',
           name: 'Primary Search',
-          enabled: true,
           description: 'Main search crawler for marketplace listings'
         },
         {
+          key: 'extended-search',
           name: 'Extended Search', 
-          enabled: true,
           description: 'Secondary search with expanded parameters'
         },
         {
+          key: 'discovery-crawler',
           name: 'Discovery Crawler',
-          enabled: true,
           description: 'New source discovery and validation'
         },
         {
+          key: 'contextual-finder',
           name: 'Contextual Finder',
-          enabled: true,
           description: 'AI-powered contextual search refinement'
         },
         {
+          key: 'widenet-explorer',
           name: 'WideNet Explorer',
-          enabled: true,
           description: 'Google search safety net for zero-result searches'
         },
         {
+          key: 'price-suggester',
           name: 'Price Suggester',
-          enabled: true,
           description: 'Dynamic price threshold recommendations'
         },
         {
+          key: 'notifier',
           name: 'Notifier',
-          enabled: true,
           description: 'Email notification service'
         }
       ];
 
-      const modulesWithStats = moduleData.map(module => {
+      const modulesWithStats = moduleDefinitions.map(module => {
+        // Find the corresponding setting
+        const setting = moduleSettings?.find(s => s.module_name === module.key);
+        
+        // Get activities for this module
         const moduleActivities = activities?.filter(a => 
-          a.module_name?.toLowerCase().replace(/\s+/g, '-') === module.name.toLowerCase().replace(/\s+/g, '-')
+          a.module_name?.toLowerCase() === module.key
         ) || [];
 
         const latestActivity = moduleActivities[0];
@@ -116,7 +131,10 @@ export const AdminDashboard = () => {
         const totalCount = moduleActivities.length;
 
         return {
-          ...module,
+          name: module.name,
+          key: module.key,
+          enabled: setting?.enabled ?? true,
+          description: module.description,
           lastRun: latestActivity ? new Date(latestActivity.created_at).toLocaleString() : undefined,
           successRate: totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0
         };
@@ -165,12 +183,35 @@ export const AdminDashboard = () => {
     }
   };
 
-  const toggleModule = (moduleName: string) => {
-    setModules(prev => prev.map(module => 
-      module.name === moduleName 
-        ? { ...module, enabled: !module.enabled }
-        : module
-    ));
+  const toggleModule = async (moduleName: string) => {
+    const module = modules.find(m => m.name === moduleName);
+    if (!module) return;
+
+    const newEnabled = !module.enabled;
+    
+    // Update the database
+    try {
+      const { error } = await supabase
+        .from('module_settings')
+        .update({ enabled: newEnabled })
+        .eq('module_name', module.key);
+
+      if (error) {
+        console.error('Error updating module setting:', error);
+        return;
+      }
+
+      // Update local state
+      setModules(prev => prev.map(m => 
+        m.name === moduleName 
+          ? { ...m, enabled: newEnabled }
+          : m
+      ));
+
+      console.log(`Module ${moduleName} ${newEnabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      console.error('Failed to toggle module:', error);
+    }
   };
 
   const runModule = async (moduleName: string) => {

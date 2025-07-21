@@ -22,6 +22,34 @@ serve(async (req) => {
 
     console.log(`Cron scheduler triggered for module: ${module}`);
 
+    // Check if the module is enabled
+    const { data: moduleSettings, error: moduleError } = await supabaseClient
+      .from('module_settings')
+      .select('enabled')
+      .eq('module_name', module)
+      .single();
+
+    if (moduleError) {
+      console.error('Error fetching module setting:', moduleError);
+      throw new Error(`Failed to get module setting: ${moduleError.message}`);
+    }
+
+    if (!moduleSettings?.enabled) {
+      console.log(`Module ${module} is disabled, skipping execution`);
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          message: `Module ${module} is disabled, execution skipped`,
+          execution_time_ms: 0,
+          configs_processed: 0
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
     // Log cron start
     await supabaseClient.rpc('log_scrape_activity', {
       p_module_name: 'search-cron-scheduler',

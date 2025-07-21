@@ -150,6 +150,30 @@ export type Database = {
           },
         ]
       }
+      module_settings: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          module_name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          module_name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          module_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       scrape_activity: {
         Row: {
           created_at: string
