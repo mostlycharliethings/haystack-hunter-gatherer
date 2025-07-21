@@ -322,44 +322,82 @@ async function scrapeEbay(searchTerms: string[], config: SearchConfig): Promise<
 }
 
 function parseFacebookMarketplace(html: string, searchTerm: string): ScrapedListing[] {
-  // Simplified parsing - in production, use proper DOM parsing
   const listings: ScrapedListing[] = [];
   
-  // Basic regex patterns for Facebook Marketplace
-  const titleRegex = /"marketplace_listing_title":"([^"]+)"/g;
-  const priceRegex = /"formatted_price":"([^"]+)"/g;
-  const locationRegex = /"marketplace_listing_location":"([^"]+)"/g;
-  
-  let match;
-  const titles = [];
-  const prices = [];
-  const locations = [];
-  
-  while ((match = titleRegex.exec(html)) !== null) {
-    titles.push(match[1]);
-  }
-  
-  while ((match = priceRegex.exec(html)) !== null) {
-    const priceStr = match[1].replace(/[^\d]/g, '');
-    prices.push(parseInt(priceStr) || 0);
-  }
-  
-  while ((match = locationRegex.exec(html)) !== null) {
-    locations.push(match[1]);
-  }
-  
-  const maxItems = Math.min(titles.length, prices.length, locations.length);
-  for (let i = 0; i < maxItems; i++) {
-    if (titles[i] && prices[i] > 0) {
-      listings.push({
-        title: titles[i],
-        price: prices[i],
-        location: locations[i] || 'Facebook Marketplace',
-        url: `https://facebook.com/marketplace/item/${Date.now()}_${i}`,
-        source: 'Facebook Marketplace',
-        tier: 1
-      });
+  try {
+    // Modern Facebook Marketplace patterns - they use data attributes and class names
+    const listingPatterns = [
+      // Pattern 1: Look for listing containers with data attributes
+      /<div[^>]*data-testid="marketplace-item"[^>]*>[\s\S]*?<span[^>]*>\$?([\d,]+)[^<]*<\/span>[\s\S]*?<span[^>]*>([^<]+)<\/span>[\s\S]*?<\/div>/gi,
+      // Pattern 2: Alternative structure with price and title
+      /<a[^>]*href="[^"]*\/marketplace\/item\/([^"\/]+)"[^>]*>[\s\S]*?<span[^>]*>\$?([\d,]+)[^<]*<\/span>[\s\S]*?<span[^>]*>([^<]+)<\/span>[\s\S]*?<\/a>/gi,
+      // Pattern 3: JSON-LD structured data if present
+      /"price":\s*"?\$?([\d,]+)"?[\s\S]*?"name":\s*"([^"]+)"/gi
+    ];
+
+    for (const pattern of listingPatterns) {
+      let match;
+      while ((match = pattern.exec(html)) !== null && listings.length < 20) {
+        let price, title, itemId;
+        
+        if (match.length === 4) {
+          // Pattern 1 or 3
+          price = parseInt(match[1].replace(/[^\d]/g, '')) || 0;
+          title = match[2];
+          itemId = match[3] || Date.now() + '_' + listings.length;
+        } else if (match.length === 3) {
+          // Pattern 2
+          itemId = match[1];
+          price = parseInt(match[2].replace(/[^\d]/g, '')) || 0;
+          title = match[3];
+        }
+
+        if (title && price > 0 && title.toLowerCase().includes(searchTerm.toLowerCase().split(' ')[0])) {
+          listings.push({
+            title: title.trim(),
+            price: price,
+            location: 'Facebook Marketplace',
+            url: `https://www.facebook.com/marketplace/item/${itemId}`,
+            source: 'Facebook Marketplace',
+            tier: 1
+          });
+        }
+      }
     }
+
+    // Fallback: Look for any price and title patterns in the HTML
+    if (listings.length === 0) {
+      const fallbackPriceRegex = /\$\s*([\d,]+)/g;
+      const fallbackTitleRegex = /<span[^>]*>([^<]*(?:sony|canon|nikon|camera|lens)[^<]*)<\/span>/gi;
+      
+      const prices = [];
+      const titles = [];
+      
+      let priceMatch;
+      while ((priceMatch = fallbackPriceRegex.exec(html)) !== null) {
+        const price = parseInt(priceMatch[1].replace(/[^\d]/g, ''));
+        if (price > 10 && price < 50000) prices.push(price);
+      }
+      
+      let titleMatch;
+      while ((titleMatch = fallbackTitleRegex.exec(html)) !== null) {
+        if (titleMatch[1].length > 5) titles.push(titleMatch[1]);
+      }
+      
+      const maxItems = Math.min(titles.length, prices.length, 5);
+      for (let i = 0; i < maxItems; i++) {
+        listings.push({
+          title: titles[i].trim(),
+          price: prices[i],
+          location: 'Facebook Marketplace',
+          url: `https://www.facebook.com/marketplace/search/?query=${encodeURIComponent(searchTerm)}`,
+          source: 'Facebook Marketplace',
+          tier: 1
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Facebook parsing error:', error);
   }
   
   return listings;
@@ -368,37 +406,87 @@ function parseFacebookMarketplace(html: string, searchTerm: string): ScrapedList
 function parseCraigslist(html: string, source: string): ScrapedListing[] {
   const listings: ScrapedListing[] = [];
   
-  // Simplified Craigslist parsing
-  const listingRegex = /<a[^>]+href="([^"]+)"[^>]*class="[^"]*result-title[^"]*"[^>]*>([^<]+)<\/a>/g;
-  const priceRegex = /<span class="result-price">([^<]+)<\/span>/g;
-  
-  let match;
-  const urls = [];
-  const titles = [];
-  const prices = [];
-  
-  while ((match = listingRegex.exec(html)) !== null) {
-    urls.push(match[1]);
-    titles.push(match[2]);
-  }
-  
-  while ((match = priceRegex.exec(html)) !== null) {
-    const priceStr = match[1].replace(/[^\d]/g, '');
-    prices.push(parseInt(priceStr) || 0);
-  }
-  
-  const maxItems = Math.min(urls.length, titles.length, prices.length);
-  for (let i = 0; i < maxItems; i++) {
-    if (titles[i] && prices[i] > 0) {
-      listings.push({
-        title: titles[i].trim(),
-        price: prices[i],
-        location: source.replace('Craigslist ', '') + ', CO',
-        url: urls[i].startsWith('http') ? urls[i] : `https://craigslist.org${urls[i]}`,
-        source: source,
-        tier: 1
-      });
+  try {
+    // Modern Craigslist patterns - they've updated their HTML structure
+    const listingPatterns = [
+      // Pattern 1: New gallery view structure
+      /<li[^>]*class="[^"]*cl-search-result[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>[\s\S]*?<span[^>]*class="[^"]*price[^"]*"[^>]*>\$?([\d,]+)[^<]*<\/span>[\s\S]*?<span[^>]*class="[^"]*label[^"]*"[^>]*>([^<]+)<\/span>[\s\S]*?<\/li>/gi,
+      // Pattern 2: List view structure
+      /<div[^>]*class="[^"]*result-info[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*class="[^"]*hdrlnk[^"]*"[^>]*>([^<]+)<\/a>[\s\S]*?<span[^>]*class="[^"]*price[^"]*"[^>]*>\$?([\d,]+)[^<]*<\/span>/gi,
+      // Pattern 3: Fallback for older structure
+      /<a[^>]+href="([^"]+)"[^>]*class="[^"]*result-title[^"]*"[^>]*>([^<]+)<\/a>[\s\S]*?<span[^>]*class="[^"]*result-price[^"]*"[^>]*>\$?([\d,]+)[^<]*<\/span>/gi
+    ];
+
+    for (const pattern of listingPatterns) {
+      let match;
+      while ((match = pattern.exec(html)) !== null && listings.length < 20) {
+        let url, title, price;
+        
+        if (pattern === listingPatterns[0]) {
+          // Pattern 1: url, price, title
+          url = match[1];
+          price = parseInt(match[2].replace(/[^\d]/g, '')) || 0;
+          title = match[3];
+        } else {
+          // Pattern 2 & 3: url, title, price
+          url = match[1];
+          title = match[2];
+          price = parseInt(match[3].replace(/[^\d]/g, '')) || 0;
+        }
+
+        if (title && price > 0 && title.length > 3) {
+          listings.push({
+            title: title.trim(),
+            price: price,
+            location: source.replace('Craigslist ', '') + ', CO',
+            url: url.startsWith('http') ? url : `https://craigslist.org${url}`,
+            source: source,
+            tier: 1
+          });
+        }
+      }
+      
+      if (listings.length > 0) break; // Found results with this pattern
     }
+
+    // Enhanced fallback parsing if no results
+    if (listings.length === 0) {
+      const priceRegex = /\$\s*([\d,]+)/g;
+      const titleRegex = /<span[^>]*>([^<]{10,100})<\/span>/g;
+      const urlRegex = /<a[^>]*href="([^"]*\/[^"]*\.html)"[^>]*>/g;
+      
+      const prices = [];
+      const titles = [];
+      const urls = [];
+      
+      let match;
+      while ((match = priceRegex.exec(html)) !== null) {
+        const price = parseInt(match[1].replace(/[^\d]/g, ''));
+        if (price > 10 && price < 50000) prices.push(price);
+      }
+      
+      while ((match = titleRegex.exec(html)) !== null) {
+        if (match[1] && match[1].length > 10) titles.push(match[1]);
+      }
+      
+      while ((match = urlRegex.exec(html)) !== null) {
+        urls.push(match[1]);
+      }
+      
+      const maxItems = Math.min(titles.length, prices.length, urls.length, 3);
+      for (let i = 0; i < maxItems; i++) {
+        listings.push({
+          title: titles[i].trim(),
+          price: prices[i],
+          location: source.replace('Craigslist ', '') + ', CO',
+          url: urls[i].startsWith('http') ? urls[i] : `https://craigslist.org${urls[i]}`,
+          source: source,
+          tier: 1
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Craigslist parsing error:', error);
   }
   
   return listings;
@@ -407,26 +495,90 @@ function parseCraigslist(html: string, source: string): ScrapedListing[] {
 function parseEbay(html: string): ScrapedListing[] {
   const listings: ScrapedListing[] = [];
   
-  // Simplified eBay parsing
-  const listingRegex = /<div class="s-item__wrapper[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>[\s\S]*?<span class="notranslate">([^<]+)<\/span>/g;
-  
-  let match;
-  while ((match = listingRegex.exec(html)) !== null) {
-    const url = match[1];
-    const title = match[2];
-    const priceStr = match[3].replace(/[^\d]/g, '');
-    const price = parseInt(priceStr) || 0;
-    
-    if (title && price > 0) {
-      listings.push({
-        title: title.trim(),
-        price: price,
-        location: 'eBay',
-        url: url,
-        source: 'eBay',
-        tier: 1
-      });
+  try {
+    // Modern eBay patterns - they use different structures now
+    const listingPatterns = [
+      // Pattern 1: Search results with s-item class
+      /<div[^>]*class="[^"]*s-item__wrapper[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>[\s\S]*?<span[^>]*class="[^"]*s-item__price[^"]*"[^>]*>\$?([\d,]+\.?\d*)[^<]*<\/span>[\s\S]*?<span[^>]*>([^<]+)<\/span>/gi,
+      // Pattern 2: Alternative item structure
+      /<div[^>]*class="[^"]*item[^"]*"[^>]*>[\s\S]*?<h3[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<span[^>]*class="[^"]*price[^"]*"[^>]*>\$?([\d,]+\.?\d*)[^<]*<\/span>/gi,
+      // Pattern 3: JSON-LD structured data
+      /"url":"([^"]+)"[\s\S]*?"name":"([^"]+)"[\s\S]*?"price":"?([\d,]+\.?\d*)"?/gi
+    ];
+
+    for (const pattern of listingPatterns) {
+      let match;
+      while ((match = pattern.exec(html)) !== null && listings.length < 20) {
+        let url, title, price;
+        
+        if (pattern === listingPatterns[0]) {
+          // Pattern 1: url, price, title
+          url = match[1];
+          price = parseFloat(match[2].replace(/[^\d.]/g, '')) || 0;
+          title = match[3];
+        } else if (pattern === listingPatterns[1]) {
+          // Pattern 2: url, title, price
+          url = match[1];
+          title = match[2];
+          price = parseFloat(match[3].replace(/[^\d.]/g, '')) || 0;
+        } else {
+          // Pattern 3: JSON-LD
+          url = match[1];
+          title = match[2];
+          price = parseFloat(match[3].replace(/[^\d.]/g, '')) || 0;
+        }
+
+        if (title && price > 0 && title.length > 5) {
+          listings.push({
+            title: title.trim(),
+            price: Math.round(price),
+            location: 'eBay',
+            url: url.startsWith('http') ? url : `https://ebay.com${url}`,
+            source: 'eBay',
+            tier: 1
+          });
+        }
+      }
+      
+      if (listings.length > 0) break; // Found results with this pattern
     }
+
+    // Enhanced fallback for eBay
+    if (listings.length === 0) {
+      // Look for any item links and prices
+      const itemLinkRegex = /<a[^>]*href="([^"]*\/itm\/[^"]*)"[^>]*>([^<]+)<\/a>/gi;
+      const priceRegex = /\$\s*([\d,]+(?:\.\d{2})?)/g;
+      
+      const itemData = [];
+      const prices = [];
+      
+      let linkMatch;
+      while ((linkMatch = itemLinkRegex.exec(html)) !== null) {
+        itemData.push({ url: linkMatch[1], title: linkMatch[2] });
+      }
+      
+      let priceMatch;
+      while ((priceMatch = priceRegex.exec(html)) !== null) {
+        const price = parseFloat(priceMatch[1].replace(/[^\d.]/g, ''));
+        if (price > 1 && price < 50000) prices.push(Math.round(price));
+      }
+      
+      const maxItems = Math.min(itemData.length, prices.length, 5);
+      for (let i = 0; i < maxItems; i++) {
+        if (itemData[i] && prices[i]) {
+          listings.push({
+            title: itemData[i].title.trim(),
+            price: prices[i],
+            location: 'eBay',
+            url: itemData[i].url.startsWith('http') ? itemData[i].url : `https://ebay.com${itemData[i].url}`,
+            source: 'eBay',
+            tier: 1
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('eBay parsing error:', error);
   }
   
   return listings;
