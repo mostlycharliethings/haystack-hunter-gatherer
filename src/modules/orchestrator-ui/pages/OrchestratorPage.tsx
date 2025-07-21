@@ -251,8 +251,7 @@ export function OrchestratorPage() {
           <div className="flex justify-center">
             <Link to="/admin">
               <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-                <Settings className="h-4 w-4 mr-2" />
-                Admin
+                <Settings className="h-4 w-4" />
               </Button>
             </Link>
           </div>
