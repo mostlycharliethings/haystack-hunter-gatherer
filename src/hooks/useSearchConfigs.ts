@@ -47,16 +47,32 @@ export function useSearchConfigs() {
 
       setConfigs(prev => [data, ...prev]);
       
-      // Trigger notifier for new config
+      // Trigger the complete processing chain for new config
       try {
+        // 1. Primary search (Tier 1 sources)
+        await supabase.functions.invoke('primary-search', {
+          body: { searchConfigId: data.id }
+        });
+
+        // 2. Contextual finder (populates secondary_sources)
+        await supabase.functions.invoke('contextual-finder', {
+          body: { searchConfigId: data.id }
+        });
+
+        // 3. Discovery crawler (populates tertiary_sources)
+        await supabase.functions.invoke('discovery-crawler', {
+          body: { searchConfigId: data.id }
+        });
+
+        // 4. Send confirmation notification
         await supabase.functions.invoke('notifier', {
           body: { 
             type: 'confirmation',
             searchConfigId: data.id
           }
         });
-      } catch (notifierError) {
-        console.warn('Failed to send notification:', notifierError);
+      } catch (processingError) {
+        console.warn('Failed to trigger processing chain:', processingError);
       }
 
       toast({
