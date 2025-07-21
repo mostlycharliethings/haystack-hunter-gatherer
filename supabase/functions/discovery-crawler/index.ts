@@ -8,22 +8,30 @@ const corsHeaders = {
 };
 
 const GPT_SYSTEM_PROMPT = `
-You are an intelligent web researcher focused on finding obscure but active online classifieds, forums, and bulletin boards in the Denver/Colorado region where people may post items for sale. Avoid major marketplaces like Craigslist or Facebook Marketplace.
+You are an expert at finding real, active marketplace websites where people buy and sell items in Colorado.
+Focus on legitimate websites with actual search functionality and recent listings.
+Include both general marketplaces and specialized sites (bikes, cars, electronics, etc.).
 `;
 
 const GPT_USER_PROMPT = `
-Find 5-8 lesser-known online communities or marketplaces in Colorado where people post items for sale.
+Find 8-12 real marketplace websites for Colorado where people can search for items to buy.
+Include both general marketplaces and category-specific sites (cycling, automotive, electronics, sports equipment, etc.).
+
+For each site, provide the exact search URL format that can be used to find listings.
 
 Return in JSON array format:
 [
   {
-    "url": "...",
-    "name": "...",
-    "category": "...", 
-    "description": "...",
-    "activity_level": 1-10
+    "name": "exact site name", 
+    "search_url": "https://example.com/search?q={query}&location=colorado",
+    "category": "General/Cycling/Automotive/Electronics/etc",
+    "description": "brief description of site focus",
+    "searchable": true
   }
 ]
+
+Make sure search_url contains {query} placeholder and location parameters for Colorado when possible.
+Only include sites that actually exist and have active listings.
 `;
 
 serve(async (req: Request) => {
@@ -47,118 +55,94 @@ serve(async (req: Request) => {
     configId = body?.searchConfigId ?? null;
   } catch {}
 
-  await logActivity(supabase, "discovery-crawler", configId, "started", "Discovery crawler starting");
+  await logActivity(supabase, "discovery-crawler", configId, "started", "Discovery crawler starting to populate tertiary_sources");
 
   try {
     const startTime = Date.now();
 
-    const discoveredSites = await discoverNovelSites(openaiKey);
-    const validatedSites = await validateAndScoreSites(discoveredSites);
-
-    let savedCount = 0;
-
-    // Get active search configs to scrape with the discovered sites
+    // Get active search configs for tagging discovered sources
     const { data: searchConfigs } = await supabase
       .from('search_configs')
       .select('*')
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .limit(1);
 
     if (!searchConfigs || searchConfigs.length === 0) {
       throw new Error('No active search configs found');
     }
 
-    // Save discovered marketplace sites to tertiary_sources (metadata only)
+    const refConfigId = searchConfigs[0].id;
+
+    const discoveredSites = await discoverMarketplaceSites(openaiKey);
+    const validatedSites = await validateMarketplaceSites(discoveredSites);
+
+    let savedCount = 0;
+
+    // Save validated marketplace sites as tertiary sources
     for (const site of validatedSites) {
       try {
-        // Insert marketplace metadata with a dummy search_config_id (use first active config)
-        const { error: siteError } = await supabase.from("tertiary_sources").upsert({
-          search_config_id: searchConfigs[0].id, // Use first active config for metadata
-          title: `${site.name} - Marketplace`,
-          price: 0, // Not applicable for marketplace metadata
-          location: site.description || 'Colorado',
-          source: 'discovery-crawler',
-          url: site.url.trim().toLowerCase(),
+        console.log(`💾 Saving tertiary source: ${site.name}`);
+        
+        const { error: insertError } = await supabase.from("tertiary_sources").upsert({
+          search_config_id: refConfigId,
+          title: `${site.name} Marketplace`,
+          price: 0, // Placeholder price - actual prices come from searches
+          location: 'Colorado',
+          source: site.name,
+          url: site.search_url || site.url,
           posted_at: new Date().toISOString(),
           discovered_at: new Date().toISOString(),
-          relevance_score: (site.freshness_score + site.reliability_score) / 200,
-          discovery_type: 'marketplace_metadata',
-          tier: 3
+          relevance_score: site.score / 100.0,
+          discovery_type: site.category.toLowerCase(),
+          tier: 3,
+          searchable: true,
+          searchable_false_reason: null
         }, {
           onConflict: "url",
-          ignoreDuplicates: true,
+          ignoreDuplicates: false
         });
 
-        if (siteError && !siteError.message.includes('duplicate')) {
-          console.log(`Failed to save site metadata for ${site.name}:`, siteError.message);
+        if (insertError) {
+          console.error(`❌ Error saving ${site.name}:`, insertError.message);
         } else {
-          console.log(`✅ Saved marketplace metadata: ${site.name}`);
+          savedCount++;
+          console.log(`✅ Saved tertiary source ${savedCount}: ${site.name}`);
         }
       } catch (error) {
-        console.log(`❌ Error saving metadata for ${site.name}:`, error.message);
-      }
-    }
-
-    // Now scrape actual listings from validated sites and save to listings table
-    for (const site of validatedSites) {
-      for (const config of searchConfigs) {
-        try {
-          const scrapedListings = await scrapeDiscoveredSite(site, config);
-          
-          // Save actual listings to listings table
-          for (const listing of scrapedListings) {
-            try {
-              console.log(`💾 Saving discovery listing: ${listing.title} - $${listing.price} from ${site.name}`);
-              
-              const { data, error } = await supabase.from("listings").upsert({
-                search_config_id: config.id,
-                title: listing.title,
-                price: listing.price,
-                location: listing.location || site.name,
-                distance: listing.distance || null,
-                source: site.name,
-                url: listing.url,
-                image_url: listing.image_url || null,
-                posted_at: listing.posted_at || new Date().toISOString(),
-                tier: 3
-              }, {
-                onConflict: "url",
-                ignoreDuplicates: false // Changed to track what's happening
-              });
-
-              if (error) {
-                console.error(`❌ Error saving discovery listing: ${error.message}`);
-              } else {
-                savedCount++;
-                console.log(`✅ Saved discovery listing ${savedCount}: ${listing.title}`);
-              }
-            } catch (listingError) {
-              console.error(`❌ Exception saving listing from ${site.name}:`, listingError);
-            }
-          }
-        } catch (siteError) {
-          console.log(`Failed to scrape ${site.name}:`, siteError.message);
-        }
+        console.error(`❌ Exception saving ${site.name}:`, error.message);
       }
     }
 
     const duration = Date.now() - startTime;
 
-    await logActivity(supabase, "discovery-crawler", configId, "success", `Discovered ${discoveredSites.length} sites, validated ${validatedSites.length}, saved ${savedCount} tertiary listings`, {
+    await logActivity(supabase, "discovery-crawler", configId, "success", 
+      `Discovered ${discoveredSites.length} sites, validated ${validatedSites.length}, saved ${savedCount} tertiary sources`, 
+      {
+        sites_discovered: discoveredSites.length,
+        sites_validated: validatedSites.length,
+        tertiary_sources_added: savedCount,
+        region: "colorado"
+      }, 
+      savedCount, 
+      duration
+    );
+
+    return jsonResponse({ 
+      success: true, 
       sites_discovered: discoveredSites.length,
       sites_validated: validatedSites.length,
-      listings_saved: savedCount,
-      region: "denver",
-    }, validatedSites.length, duration);
-
-    return jsonResponse({ success: true, savedCount, validatedCount: validatedSites.length }, 200);
+      tertiary_sources_added: savedCount
+    }, 200);
   } catch (err) {
-    console.error("Crawler failure:", err);
+    console.error("Discovery crawler failure:", err);
     await logActivity(supabase, "discovery-crawler", configId, "failed", err.message || "Unknown error");
     return jsonResponse({ error: err.message }, 500);
   }
 });
 
-async function discoverNovelSites(apiKey: string): Promise<any[]> {
+async function discoverMarketplaceSites(apiKey: string): Promise<any[]> {
+  console.log("🤖 Asking OpenAI to discover marketplace sites...");
+  
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -167,7 +151,7 @@ async function discoverNovelSites(apiKey: string): Promise<any[]> {
     },
     body: JSON.stringify({
       model: "gpt-4",
-      temperature: 0.4,
+      temperature: 0.3,
       messages: [
         { role: "system", content: GPT_SYSTEM_PROMPT },
         { role: "user", content: GPT_USER_PROMPT },
@@ -175,149 +159,130 @@ async function discoverNovelSites(apiKey: string): Promise<any[]> {
     }),
   });
 
+  if (!response.ok) {
+    throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+  }
+
   const data = await response.json();
   try {
-    const parsed = JSON.parse(data.choices?.[0]?.message?.content || "[]");
-    return Array.isArray(parsed) ? parsed : [];
+    const content = data.choices?.[0]?.message?.content || "[]";
+    console.log("🤖 OpenAI response:", content);
+    
+    const parsed = JSON.parse(content);
+    const sites = Array.isArray(parsed) ? parsed : [];
+    
+    console.log(`🔍 Discovered ${sites.length} potential marketplace sites`);
+    return sites;
   } catch (e) {
-    console.warn("Failed to parse GPT response", e);
+    console.warn("Failed to parse GPT response:", e);
     return [];
   }
 }
 
-async function validateAndScoreSites(sites: any[]): Promise<any[]> {
-  const out: any[] = [];
+async function validateMarketplaceSites(sites: any[]): Promise<any[]> {
+  const validatedSites: any[] = [];
+  
+  console.log(`🔍 Validating ${sites.length} discovered sites...`);
+  
   for (const site of sites) {
-    if (!site.url || !site.name) continue;
-
-    try {
-      const headRes = await fetch(site.url, { method: "HEAD" });
-      if (!headRes.ok) continue;
-
-      const htmlRes = await fetch(site.url);
-      const html = await htmlRes.text();
-
-      const scores = scoreSite(html, site);
-      out.push({
-        ...site,
-        freshness_score: scores.freshness,
-        reliability_score: scores.reliability,
-      });
-    } catch {
+    if (!site.search_url && !site.name) {
+      console.log(`⚠️  Skipping site - missing required fields`);
       continue;
     }
 
-    await new Promise(r => setTimeout(r, 2000)); // Rate limit
-  }
-
-  return out;
-}
-
-function scoreSite(html: string, site: any) {
-  const text = html.toLowerCase();
-  let freshness = 50, reliability = 50;
-
-  if (text.includes(new Date().getFullYear().toString())) freshness += 20;
-  if (text.includes("today") || text.includes("yesterday")) freshness += 15;
-  if (text.includes("hour ago") || text.includes("hours ago")) freshness += 25;
-
-  ["for sale", "classified", "marketplace"].forEach(k => { if (text.includes(k)) reliability += 5; });
-  ["login", "register", "terms", "privacy", "contact"].forEach(k => { if (text.includes(k)) reliability += 5; });
-
-  if (html.length < 5000) reliability -= 15;
-
-  if (site.activity_level) {
-    freshness += Math.min(site.activity_level * 2, 20);
-    reliability += Math.min(site.activity_level * 1.5, 15);
-  }
-
-  return {
-    freshness: Math.max(0, Math.min(100, freshness)),
-    reliability: Math.max(0, Math.min(100, reliability)),
-  };
-}
-
-async function scrapeDiscoveredSite(site: any, config: any): Promise<any[]> {
-  const listings: any[] = [];
-  
-  try {
-    // Build search terms for this config
-    const searchTerms = [`${config.brand} ${config.model}`];
-    if (config.qualifier) searchTerms.push(`${config.brand} ${config.model} ${config.qualifier}`);
-    
-    console.log(`🔍 Scraping ${site.name} for: ${searchTerms.join(', ')}`);
-    
-    // Respectful delay before scraping (2-5 seconds random)
-    const delay = 2000 + Math.random() * 3000;
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
-    // Create AbortController for timeout handling
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
     try {
-      const response = await fetch(site.url, {
+      console.log(`🌐 Validating ${site.name}...`);
+      
+      // Test the base URL or search URL
+      const testUrl = site.search_url ? site.search_url.replace('{query}', 'test') : site.url;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(testUrl, {
+        method: "HEAD",
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (compatible; marketplace-discovery/1.0)'
         }
       });
       
       clearTimeout(timeoutId);
       
-      if (!response.ok) {
-        if (response.status === 404) {
-          console.log(`⚠️  ${site.name} returned 404 - site may be down`);
-          return listings;
+      if (response.ok) {
+        const score = scoreMarketplaceSite(site);
+        
+        if (score >= 60) {
+          validatedSites.push({
+            ...site,
+            score: score,
+            url: testUrl,
+            validated_at: new Date().toISOString()
+          });
+          console.log(`✅ Validated ${site.name} (score: ${score})`);
+        } else {
+          console.log(`❌ ${site.name} scored too low (${score})`);
         }
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const html = await response.text();
-      console.log(`📄 Got ${html.length} chars from ${site.name}`);
-      
-      // Basic pattern matching for prices and listings
-      const priceMatches = html.match(/\$(\d{1,4}(?:,\d{3})*)/g) || [];
-      const linkMatches = html.match(/href=["']([^"']+)["']/g) || [];
-      
-      console.log(`💰 Found ${priceMatches.length} price matches, ${linkMatches.length} links`);
-      
-      // Create sample listings if we found price indicators
-      if (priceMatches.length > 0) {
-        for (let i = 0; i < Math.min(3, priceMatches.length); i++) {
-          const priceStr = priceMatches[i].replace('$', '').replace(',', '');
-          const price = parseInt(priceStr);
-          
-          if (price >= 50 && price <= config.price_threshold * config.price_multiplier) {
-            listings.push({
-              title: `${config.brand} ${config.model} listing from ${site.name}`,
-              price: price,
-              location: site.name,
-              url: `${site.url}#listing-${i}`,
-              relevance_score: 0.3,
-              posted_at: new Date().toISOString()
-            });
-          }
-        }
-      }
-      
-      console.log(`✅ Created ${listings.length} listings from ${site.name}`);
-      
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      if (fetchError.name === 'AbortError') {
-        console.log(`⏰ Timeout scraping ${site.name} after 30 seconds`);
       } else {
-        throw fetchError;
+        console.log(`❌ ${site.name} returned HTTP ${response.status}`);
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log(`⏰ ${site.name} timed out`);
+      } else {
+        console.log(`❌ ${site.name} validation failed:`, error.message);
       }
     }
-    
-  } catch (error) {
-    console.error(`❌ Failed to scrape ${site.name}:`, error.message);
+
+    // Rate limiting
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+
+  console.log(`✅ Validated ${validatedSites.length}/${sites.length} sites`);
+  return validatedSites;
+}
+
+function scoreMarketplaceSite(site: any): number {
+  let score = 50; // Base score
+  
+  // Category bonus
+  const categories = {
+    'general': 20,
+    'cycling': 15,
+    'automotive': 15,
+    'electronics': 12,
+    'sports': 10,
+    'furniture': 10
+  };
+  
+  const category = site.category?.toLowerCase() || '';
+  score += categories[category] || 5;
+  
+  // Search URL bonus (means it's scrapeable)
+  if (site.search_url && site.search_url.includes('{query}')) {
+    score += 25;
   }
   
-  return listings;
+  // Name quality bonus
+  if (site.name && site.name.length > 5 && site.name.length < 50) {
+    score += 10;
+  }
+  
+  // Searchable flag bonus
+  if (site.searchable === true) {
+    score += 15;
+  }
+  
+  // Description quality
+  if (site.description && site.description.length > 20) {
+    score += 5;
+  }
+  
+  return Math.max(0, Math.min(100, score));
 }
+
+// This function is no longer needed since we're populating tertiary_sources 
+// with marketplace metadata instead of scraping listings directly
 
 async function logActivity(client: any, module: string, configId: string | null, status: string, msg: string, metadata: any = {}, sources = 0, time = 0) {
   await client.rpc("log_scrape_activity", {
