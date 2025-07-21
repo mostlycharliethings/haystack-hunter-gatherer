@@ -14,7 +14,9 @@ import {
   CheckCircle, 
   XCircle, 
   Clock,
-  Search
+  Search,
+  TestTube,
+  ExternalLink
 } from 'lucide-react';
 import { useSearchConfigs } from '@/hooks/useSearchConfigs';
 import { useListings } from '@/hooks/useListings';
@@ -286,6 +288,7 @@ export const AdminDashboard = () => {
         <TabsList>
           <TabsTrigger value="modules">Module Control</TabsTrigger>
           <TabsTrigger value="logs">Execution Logs</TabsTrigger>
+          <TabsTrigger value="api-tests">API Tests</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
         </TabsList>
         
@@ -387,6 +390,142 @@ export const AdminDashboard = () => {
               </ScrollArea>
             </CardContent>
           </Card>
+        </TabsContent>
+        
+        <TabsContent value="api-tests">
+          <div className="grid gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>API Service Tests</CardTitle>
+                <CardDescription>
+                  Test external API integrations and verify functionality
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-4 border rounded-lg">
+                    <div>
+                      <h4 className="font-medium">ScraperAPI Service</h4>
+                      <p className="text-sm text-muted-foreground">Verify ScraperAPI key and functionality</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        console.log('Testing ScraperAPI...');
+                        try {
+                          const { data, error } = await supabase.functions.invoke('test-scraper-api');
+                          if (error) {
+                            console.error('ScraperAPI test error:', error);
+                          } else {
+                            console.log('ScraperAPI test results:', data);
+                          }
+                          // Refresh logs to show the test results
+                          setTimeout(() => {
+                            fetchActivityLogs();
+                          }, 2000);
+                        } catch (error) {
+                          console.error('Failed to test ScraperAPI:', error);
+                        }
+                      }}
+                    >
+                      <TestTube className="h-4 w-4 mr-2" />
+                      Test ScraperAPI
+                    </Button>
+                  </div>
+                  <div className="flex justify-between items-center p-4 border rounded-lg">
+                    <div>
+                      <h4 className="font-medium">Primary Search API Calls</h4>
+                      <p className="text-sm text-muted-foreground">Evidence of actual marketplace scraping</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        // Filter logs to show only primary-search with API call evidence
+                        const primarySearchLogs = logs.filter(log => 
+                          log.module.toLowerCase().includes('primary') || 
+                          log.message.includes('ScraperAPI') ||
+                          log.message.includes('Craigslist') ||
+                          log.message.includes('Facebook') ||
+                          log.message.includes('eBay')
+                        );
+                        console.log('Primary Search API Evidence:', primarySearchLogs);
+                      }}
+                    >
+                      <Search className="h-4 w-4 mr-2" />
+                      Show API Evidence
+                    </Button>
+                  </div>
+                  <div className="flex justify-between items-center p-4 border rounded-lg">
+                    <div>
+                      <h4 className="font-medium">Edge Function Logs</h4>
+                      <p className="text-sm text-muted-foreground">View real-time logs from edge functions</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open('https://supabase.com/dashboard/project/prgzopfgxpcmducwrpwl/functions/primary-search/logs', '_blank')}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      View Function Logs
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Show Primary Search Evidence */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Primary Search Module Evidence</CardTitle>
+                <CardDescription>
+                  Proof that the Primary Search module is calling ScraperAPI
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-64">
+                  {logs.filter(log => 
+                    log.module.toLowerCase().includes('primary') ||
+                    log.message.toLowerCase().includes('scraper')
+                  ).length === 0 ? (
+                    <div className="flex items-center justify-center h-32">
+                      <div className="text-muted-foreground">No Primary Search logs yet. Run the module to see API evidence.</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {logs.filter(log => 
+                        log.module.toLowerCase().includes('primary') ||
+                        log.message.toLowerCase().includes('scraper') ||
+                        log.message.toLowerCase().includes('craigslist') ||
+                        log.message.toLowerCase().includes('facebook') ||
+                        log.message.toLowerCase().includes('ebay')
+                      ).map((log) => (
+                        <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+                          <div className="mt-1">
+                            {log.level === 'ERROR' && <XCircle className="h-4 w-4 text-destructive" />}
+                            {log.level === 'SUCCESS' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                            {log.level === 'WARNING' && <Clock className="h-4 w-4 text-yellow-500" />}
+                            {log.level === 'INFO' && <Activity className="h-4 w-4 text-blue-500" />}
+                          </div>
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant={getLogLevelColor(log.level)} className="text-xs">
+                                {log.level}
+                              </Badge>
+                              <span className="text-sm font-medium">{log.module}</span>
+                              <span className="text-xs text-muted-foreground">{log.timestamp}</span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{log.message}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
         
         <TabsContent value="performance">
