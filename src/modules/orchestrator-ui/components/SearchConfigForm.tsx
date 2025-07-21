@@ -57,9 +57,28 @@ export function SearchConfigForm({ onSubmit, initialData }: SearchConfigFormProp
 
   const handleSubmit = (data: SearchConfigFormData) => {
     onSubmit(data);
+    
+    // Reset the form to initial state after successful submission
+    form.reset({
+      brand: "",
+      model: "",
+      qualifier: "",
+      subQualifier: "",
+      yearStart: "",
+      yearEnd: "",
+      priceThreshold: 1000,
+      priceMultiplier: 1,
+      location: "",
+      email: "",
+    });
+    
+    // Reset local component state
+    setPriceMultiplier(1);
+    setPriceSuggestions(null);
+    
     toast({
       title: "Search Configuration Saved",
-      description: "Your search criteria have been saved successfully.",
+      description: "Your search criteria have been saved successfully. The form has been reset for your next search.",
     });
   };
 
