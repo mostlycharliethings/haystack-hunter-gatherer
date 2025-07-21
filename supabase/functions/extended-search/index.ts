@@ -55,25 +55,30 @@ serve(async (req) => {
 
     const { searchConfigId } = await req.json();
     
-    // Get search configuration
+    if (!searchConfigId) {
+      throw new Error('searchConfigId is required - extended-search processes one SearchSpec at a time');
+    }
+    
+    // Get search configuration - EXPLICIT: processes one SearchSpec per invocation
     const { data: searchConfig, error: configError } = await supabaseClient
       .from('search_configs')
       .select('*')
       .eq('id', searchConfigId)
+      .eq('is_active', true)
       .single();
 
     if (configError || !searchConfig) {
-      throw new Error(`Search config not found: ${configError?.message}`);
+      throw new Error(`Active search config not found: ${configError?.message}`);
     }
 
-    console.log(`Starting extended search for: ${searchConfig.brand} ${searchConfig.model}`);
+    console.log(`Starting extended search for SearchSpec: ${searchConfig.brand} ${searchConfig.model} (${searchConfigId})`);
 
     // Log scrape start
     await supabaseClient.rpc('log_scrape_activity', {
       p_module_name: 'extended-search',
       p_search_config_id: searchConfigId,
       p_status: 'started',
-      p_message: `Starting extended search for ${searchConfig.brand} ${searchConfig.model}`
+      p_message: `Starting extended search for SearchSpec: ${searchConfig.brand} ${searchConfig.model}`
     });
 
     const startTime = Date.now();
@@ -84,18 +89,17 @@ serve(async (req) => {
     const category = await categorizeSearch(searchConfig);
     console.log(`Categorized as: ${category}`);
 
-    // Get secondary sources (tier 2) for this search config
+    // Get secondary sources (tier 2) scoped to this specific SearchSpec
     const { data: secondarySources } = await supabaseClient
       .from('secondary_sources')
       .select('*')
       .eq('search_config_id', searchConfigId)
       .order('relevance_score', { ascending: false });
 
-    // Get tertiary sources (tier 3) for this search config
+    // Get tertiary sources (tier 3) GLOBALLY - NOT filtered by search_config_id
     const { data: tertiarySources } = await supabaseClient
       .from('tertiary_sources')
       .select('*')
-      .eq('search_config_id', searchConfigId)
       .order('relevance_score', { ascending: false });
 
     // Transform sources to match expected format
@@ -129,7 +133,7 @@ serve(async (req) => {
       try {
         console.log(`Scraping ${source.name} (tier ${source.tier})`);
         
-        const sourceListings = await scrapeSource(source, searchVariants, searchConfig);
+        const sourceListings = await scrapeSource(source, searchVariants, searchConfig, supabaseClient);
         
         if (sourceListings.length > 0) {
           totalListings.push(...sourceListings);
@@ -311,44 +315,112 @@ function buildSearchVariants(config: SearchConfig): string[] {
   return variants;
 }
 
-async function scrapeSource(source: Source, searchVariants: string[], config: SearchConfig): Promise<ScrapedListing[]> {
+async function scrapeSource(source: Source, searchVariants: string[], config: SearchConfig, supabaseClient: any): Promise<ScrapedListing[]> {
   const scraperApiKey = Deno.env.get('SCRAPER_API_KEY');
   const listings: ScrapedListing[] = [];
   
   if (!scraperApiKey) {
-    console.error(`No SCRAPER_API_KEY configured, cannot scrape ${source.name}`);
+    const error = `No SCRAPER_API_KEY configured, cannot scrape ${source.name}`;
+    console.error(error);
+    await logSourceFailure(supabaseClient, config.id, source, 'SCRAPER_API_KEY not configured');
     throw new Error('SCRAPER_API_KEY not configured for web scraping');
   }
 
-  // Use the source URL directly if it contains search terms, otherwise build search URLs
-  const sourceUrl = source.url;
-  console.log(`Scraping ${source.name} at ${sourceUrl} (tier ${source.tier})`);
-
+  // DYNAMIC URL BUILDING: Try to generate search URLs using SearchSpec fields
+  const baseUrl = source.url;
+  let searchUrls: string[] = [];
+  
+  // Test if source supports dynamic search URLs
+  const testSearchUrls = generateSearchUrls(baseUrl, searchVariants[0]);
+  let useDynamicUrls = false;
+  
   try {
-    const proxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(sourceUrl)}`;
+    // Test first search URL pattern to see if source supports it
+    const testUrl = testSearchUrls[0];
+    const testProxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(testUrl)}`;
+    const testResponse = await fetch(testProxyUrl, { method: 'HEAD' });
     
-    const response = await fetch(proxyUrl, {
-      headers: {
-        'User-Agent': getRandomUserAgent()
-      }
-    });
-    
-    if (!response.ok) {
-      console.error(`Failed to fetch ${sourceUrl}: ${response.status}`);
-      return [];
+    if (testResponse.ok) {
+      useDynamicUrls = true;
+      searchUrls = testSearchUrls.slice(0, 3); // Use top 3 patterns
+      console.log(`✅ ${source.name} supports dynamic search URLs`);
+    } else {
+      console.log(`❌ ${source.name} doesn't support dynamic search (HTTP ${testResponse.status}), using base URL`);
+      searchUrls = [baseUrl];
     }
-    
-    const html = await response.text();
-    const sourceListings = parseGenericListings(html, source, searchVariants[0]);
-    
-    console.log(`Found ${sourceListings.length} listings from ${source.name}`);
-    listings.push(...sourceListings);
-    
   } catch (error) {
-    console.error(`Error scraping ${source.name}:`, error);
+    console.log(`❌ ${source.name} dynamic URL test failed, using base URL:`, error.message);
+    searchUrls = [baseUrl];
+  }
+
+  // If source doesn't support search and is just a static page, skip it
+  if (!useDynamicUrls && !baseUrl.includes('search') && !baseUrl.includes('classif') && !baseUrl.includes('marketplace')) {
+    const message = `Source ${source.name} doesn't support search URLs and appears to be a static page - skipping`;
+    console.log(`⏭️  ${message}`);
+    await logSourceFailure(supabaseClient, config.id, source, 'Source does not support dynamic search URLs');
+    return [];
+  }
+
+  // Scrape each search URL
+  for (const searchUrl of searchUrls) {
+    try {
+      console.log(`🔍 Scraping ${source.name} at ${searchUrl} (tier ${source.tier})`);
+      
+      const proxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(searchUrl)}`;
+      
+      const response = await fetch(proxyUrl, {
+        headers: {
+          'User-Agent': getRandomUserAgent()
+        }
+      });
+      
+      if (!response.ok) {
+        const message = `HTTP ${response.status} for ${source.name} at ${searchUrl}`;
+        console.error(`❌ ${message}`);
+        await logSourceFailure(supabaseClient, config.id, source, message);
+        continue; // Try next URL pattern
+      }
+      
+      const html = await response.text();
+      const searchTerm = useDynamicUrls ? searchVariants[0] : 'generic';
+      const sourceListings = parseGenericListings(html, source, searchTerm);
+      
+      if (sourceListings.length > 0) {
+        console.log(`✅ Found ${sourceListings.length} listings from ${source.name}`);
+        listings.push(...sourceListings);
+        break; // Success, no need to try other URL patterns
+      } else {
+        console.log(`📭 No listings found from ${source.name} at ${searchUrl}`);
+      }
+      
+    } catch (error) {
+      const message = `Scraping error for ${source.name}: ${error.message}`;
+      console.error(`❌ ${message}`);
+      await logSourceFailure(supabaseClient, config.id, source, message);
+    }
   }
   
   return listings;
+}
+
+async function logSourceFailure(supabaseClient: any, searchConfigId: string, source: Source, reason: string) {
+  try {
+    await supabaseClient.rpc('log_scrape_activity', {
+      p_module_name: 'extended-search',
+      p_search_config_id: searchConfigId,
+      p_status: 'source_failed',
+      p_message: `Source ${source.name} (tier ${source.tier}) failed: ${reason}`,
+      p_metadata: {
+        source_id: source.id,
+        source_name: source.name,
+        source_url: source.url,
+        source_tier: source.tier,
+        failure_reason: reason
+      }
+    });
+  } catch (error) {
+    console.error('Failed to log source failure:', error);
+  }
 }
 
 function generateSearchUrls(baseUrl: string, searchTerm: string): string[] {
