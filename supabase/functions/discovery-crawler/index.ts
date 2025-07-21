@@ -106,24 +106,34 @@ serve(async (req: Request) => {
           
           // Save actual listings to listings table
           for (const listing of scrapedListings) {
-            const { error } = await supabase.from("listings").upsert({
-              search_config_id: config.id,
-              title: listing.title,
-              price: listing.price,
-              location: listing.location || site.name,
-              distance: listing.distance || null,
-              source: site.name,
-              url: listing.url,
-              image_url: listing.image_url || null,
-              posted_at: listing.posted_at || new Date().toISOString(),
-              discovered_at: new Date().toISOString(),
-              tier: 3
-            }, {
-              onConflict: "url",
-              ignoreDuplicates: true,
-            });
+            try {
+              console.log(`💾 Saving discovery listing: ${listing.title} - $${listing.price} from ${site.name}`);
+              
+              const { data, error } = await supabase.from("listings").upsert({
+                search_config_id: config.id,
+                title: listing.title,
+                price: listing.price,
+                location: listing.location || site.name,
+                distance: listing.distance || null,
+                source: site.name,
+                url: listing.url,
+                image_url: listing.image_url || null,
+                posted_at: listing.posted_at || new Date().toISOString(),
+                tier: 3
+              }, {
+                onConflict: "url",
+                ignoreDuplicates: false // Changed to track what's happening
+              });
 
-            if (!error) savedCount++;
+              if (error) {
+                console.error(`❌ Error saving discovery listing: ${error.message}`);
+              } else {
+                savedCount++;
+                console.log(`✅ Saved discovery listing ${savedCount}: ${listing.title}`);
+              }
+            } catch (listingError) {
+              console.error(`❌ Exception saving listing from ${site.name}:`, listingError);
+            }
           }
         } catch (siteError) {
           console.log(`Failed to scrape ${site.name}:`, siteError.message);
@@ -133,7 +143,7 @@ serve(async (req: Request) => {
 
     const duration = Date.now() - startTime;
 
-    await logActivity(supabase, "discovery-crawler", configId, "success", `Saved ${savedCount} tertiary listings from ${validatedSites.length} sources`, {
+    await logActivity(supabase, "discovery-crawler", configId, "success", `Discovered ${discoveredSites.length} sites, validated ${validatedSites.length}, saved ${savedCount} tertiary listings`, {
       sites_discovered: discoveredSites.length,
       sites_validated: validatedSites.length,
       listings_saved: savedCount,
@@ -315,7 +325,7 @@ async function logActivity(client: any, module: string, configId: string | null,
     p_search_config_id: configId,
     p_status: status,
     p_message: msg,
-    p_listings_found: 0,
+    p_listings_found: metadata.listings_saved || 0,
     p_sources_processed: sources,
     p_execution_time_ms: time,
     p_metadata: metadata,

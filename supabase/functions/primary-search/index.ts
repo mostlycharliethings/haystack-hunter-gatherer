@@ -64,22 +64,39 @@ serve(async (req) => {
     const filtered = results.filter(r => r.price >= 1 && r.price <= maxPrice);
     const withGeo = await geocode(filtered, config.location);
 
+    console.log(`📊 Primary search results summary:`);
+    console.log(`  - Total scraped: ${results.length}`);
+    console.log(`  - Price filtered: ${filtered.length}`);
+    console.log(`  - With geocoding: ${withGeo.length}`);
+
     let savedCount = 0;
     for (const listing of withGeo) {
-      const { error } = await supabase.from("listings").upsert({
-        search_config_id: searchConfigId,
-        title: listing.title,
-        price: listing.price,
-        location: listing.location,
-        distance: listing.distance,
-        latitude: listing.latitude,
-        longitude: listing.longitude,
-        source: listing.source,
-        tier: listing.tier,
-        url: listing.url
-      }, { onConflict: 'url', ignoreDuplicates: true });
+      try {
+        console.log(`💾 Saving primary listing: ${listing.title} - $${listing.price} from ${listing.source}`);
+        
+        const { error } = await supabase.from("listings").upsert({
+          search_config_id: searchConfigId,
+          title: listing.title,
+          price: listing.price,
+          location: listing.location,
+          distance: listing.distance,
+          latitude: listing.latitude,
+          longitude: listing.longitude,
+          source: listing.source,
+          tier: listing.tier,
+          url: listing.url,
+          posted_at: new Date().toISOString()
+        }, { onConflict: 'url', ignoreDuplicates: false }); // Changed to track what's happening
 
-      if (!error) savedCount++;
+        if (error) {
+          console.error(`❌ Error saving primary listing: ${error.message}`);
+        } else {
+          savedCount++;
+          console.log(`✅ Saved primary listing ${savedCount}: ${listing.title}`);
+        }
+      } catch (error) {
+        console.error('❌ Exception saving primary listing:', error);
+      }
     }
 
     await supabase.rpc('log_scrape_activity', {

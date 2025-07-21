@@ -260,9 +260,11 @@ export type Database = {
           price: number
           relevance_score: number | null
           search_config_id: string
+          searchable: boolean | null
           source: string
           tier: number
           title: string
+          updated_at: string | null
           url: string
           validation_passed: boolean | null
         }
@@ -277,9 +279,11 @@ export type Database = {
           price: number
           relevance_score?: number | null
           search_config_id: string
+          searchable?: boolean | null
           source: string
           tier?: number
           title: string
+          updated_at?: string | null
           url: string
           validation_passed?: boolean | null
         }
@@ -294,9 +298,11 @@ export type Database = {
           price?: number
           relevance_score?: number | null
           search_config_id?: string
+          searchable?: boolean | null
           source?: string
           tier?: number
           title?: string
+          updated_at?: string | null
           url?: string
           validation_passed?: boolean | null
         }
@@ -322,9 +328,11 @@ export type Database = {
           price: number
           relevance_score: number | null
           search_config_id: string
+          searchable: boolean | null
           source: string
           tier: number
           title: string
+          updated_at: string | null
           url: string
         }
         Insert: {
@@ -338,9 +346,11 @@ export type Database = {
           price: number
           relevance_score?: number | null
           search_config_id: string
+          searchable?: boolean | null
           source: string
           tier?: number
           title: string
+          updated_at?: string | null
           url: string
         }
         Update: {
@@ -354,9 +364,11 @@ export type Database = {
           price?: number
           relevance_score?: number | null
           search_config_id?: string
+          searchable?: boolean | null
           source?: string
           tier?: number
           title?: string
+          updated_at?: string | null
           url?: string
         }
         Relationships: [

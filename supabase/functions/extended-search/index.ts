@@ -89,17 +89,19 @@ serve(async (req) => {
     const category = await categorizeSearch(searchConfig);
     console.log(`Categorized as: ${category}`);
 
-    // Get secondary sources (tier 2) scoped to this specific SearchSpec
+    // Get secondary sources (tier 2) scoped to this specific SearchSpec - ONLY SEARCHABLE ONES
     const { data: secondarySources } = await supabaseClient
       .from('secondary_sources')
       .select('*')
       .eq('search_config_id', searchConfigId)
+      .eq('searchable', true)
       .order('relevance_score', { ascending: false });
 
-    // Get tertiary sources (tier 3) GLOBALLY - NOT filtered by search_config_id
+    // Get tertiary sources (tier 3) GLOBALLY - ONLY SEARCHABLE ONES
     const { data: tertiarySources } = await supabaseClient
       .from('tertiary_sources')
       .select('*')
+      .eq('searchable', true)
       .order('relevance_score', { ascending: false });
 
     // Transform sources to match expected format
@@ -128,8 +130,11 @@ serve(async (req) => {
     const searchVariants = buildSearchVariants(searchConfig);
     console.log(`Built ${searchVariants.length} search variants`);
 
-    // Scrape each source
-    for (const source of allSources.slice(0, 20)) { // Limit for performance
+    // Scrape each searchable source
+    const searchableSources = allSources.filter(s => s.success_rate > 0);
+    console.log(`Found ${searchableSources.length} searchable sources out of ${allSources.length} total`);
+    
+    for (const source of searchableSources.slice(0, 15)) { // Limit for performance
       try {
         console.log(`Scraping ${source.name} (tier ${source.tier})`);
         
@@ -171,6 +176,8 @@ serve(async (req) => {
     let savedCount = 0;
     for (const listing of geocodedListings) {
       try {
+        console.log(`💾 Saving listing: ${listing.title} - $${listing.price} from ${listing.source}`);
+        
         const { error } = await supabaseClient
           .from('listings')
           .upsert({
@@ -183,17 +190,22 @@ serve(async (req) => {
             tier: listing.tier,
             url: listing.url,
             image_url: listing.image_url,
-            posted_at: listing.posted_at,
+            posted_at: listing.posted_at || new Date().toISOString(),
             latitude: listing.latitude,
             longitude: listing.longitude
           }, { 
             onConflict: 'url',
-            ignoreDuplicates: true 
+            ignoreDuplicates: false  // Changed to see what's happening
           });
 
-        if (!error) savedCount++;
+        if (error) {
+          console.error('❌ Error saving listing:', error);
+        } else {
+          savedCount++;
+          console.log(`✅ Saved listing ${savedCount}: ${listing.title}`);
+        }
       } catch (error) {
-        console.error('Error saving listing:', error);
+        console.error('❌ Exception saving listing:', error);
       }
     }
 
@@ -353,11 +365,11 @@ async function scrapeSource(source: Source, searchVariants: string[], config: Se
     searchUrls = [baseUrl];
   }
 
-  // If source doesn't support search and is just a static page, skip it
-  if (!useDynamicUrls && !baseUrl.includes('search') && !baseUrl.includes('classif') && !baseUrl.includes('marketplace')) {
-    const message = `Source ${source.name} doesn't support search URLs and appears to be a static page - skipping`;
+  // If source doesn't support search, skip it entirely
+  if (!useDynamicUrls) {
+    const message = `Source ${source.name} doesn't support search URLs - skipping`;
     console.log(`⏭️  ${message}`);
-    await logSourceFailure(supabaseClient, config.id, source, 'Source does not support dynamic search URLs');
+    await logSourceFailure(supabaseClient, config.id, source, 'Source marked as non-searchable or failed URL test');
     return [];
   }
 
@@ -427,20 +439,28 @@ function generateSearchUrls(baseUrl: string, searchTerm: string): string[] {
   const encodedTerm = encodeURIComponent(searchTerm);
   const urls = [];
   
-  // Common search URL patterns
-  const patterns = [
-    `/search?q=${encodedTerm}`,
-    `/search?query=${encodedTerm}`,
-    `/classifieds/search?q=${encodedTerm}`,
-    `/marketplace/search?q=${encodedTerm}`,
-    `/for-sale?search=${encodedTerm}`,
-    `/buy-sell?q=${encodedTerm}`,
-    `?s=${encodedTerm}`,
-    `/search.php?q=${encodedTerm}`
-  ];
-  
-  for (const pattern of patterns) {
-    urls.push(baseUrl.replace(/\/$/, '') + pattern);
+  // Known working patterns for specific sites
+  if (baseUrl.includes('reverb.com')) {
+    urls.push(`${baseUrl.replace(/\/$/, '')}/marketplace?query=${encodedTerm}`);
+  } else if (baseUrl.includes('bhphotovideo.com')) {
+    urls.push(`https://www.bhphotovideo.com/c/search?Ntt=${encodedTerm}`);
+  } else if (baseUrl.includes('adorama.com')) {
+    urls.push(`${baseUrl.replace(/\/$/, '')}/l/Used-Equipment?searchinfo=${encodedTerm}`);
+  } else if (baseUrl.includes('keh.com')) {
+    urls.push(`https://www.keh.com/shop/?s=${encodedTerm}`);
+  } else if (baseUrl.includes('ebay.com')) {
+    urls.push(`https://www.ebay.com/sch/i.html?_nkw=${encodedTerm}`);
+  } else {
+    // Conservative fallback patterns for unknown sites
+    const patterns = [
+      `/search?q=${encodedTerm}`,
+      `/search?query=${encodedTerm}`,
+      `?s=${encodedTerm}`
+    ];
+    
+    for (const pattern of patterns) {
+      urls.push(baseUrl.replace(/\/$/, '') + pattern);
+    }
   }
   
   return urls;
