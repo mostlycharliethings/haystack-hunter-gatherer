@@ -90,6 +90,9 @@ serve(async (req) => {
         case 'discovery-crawler':
           results = await runDiscoveryCrawler();
           break;
+        case 'craigslist-searcher':
+          results = await runCraigslistSearcher();
+          break;
         case 'notifier':
           results = await runNotifier(activeConfigs);
           break;
@@ -372,6 +375,49 @@ async function runNotifier(configs: any[]): Promise<any> {
     return {
       success: false,
       message: `Notifier error: ${error.message}`,
+      listings_found: 0,
+      sources_processed: 0,
+      details: { error: error.message }
+    };
+  }
+}
+
+async function runCraigslistSearcher(): Promise<any> {
+  try {
+    console.log('Running Craigslist searcher');
+    
+    const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/craigslist-searcher`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({})
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      return {
+        success: true,
+        message: `Craigslist searcher completed. Found ${result.listings_found || 0} listings from ${result.areas_processed || 0} areas.`,
+        listings_found: result.listings_found || 0,
+        sources_processed: result.areas_processed || 0,
+        details: result
+      };
+    } else {
+      const error = await response.text();
+      return {
+        success: false,
+        message: `Craigslist searcher failed: ${error}`,
+        listings_found: 0,
+        sources_processed: 0,
+        details: { error }
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: `Craigslist searcher error: ${error.message}`,
       listings_found: 0,
       sources_processed: 0,
       details: { error: error.message }
