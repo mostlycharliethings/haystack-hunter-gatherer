@@ -261,6 +261,7 @@ export type Database = {
           relevance_score: number | null
           search_config_id: string
           searchable: boolean | null
+          searchable_false_reason: string | null
           source: string
           tier: number
           title: string
@@ -280,6 +281,7 @@ export type Database = {
           relevance_score?: number | null
           search_config_id: string
           searchable?: boolean | null
+          searchable_false_reason?: string | null
           source: string
           tier?: number
           title: string
@@ -299,6 +301,7 @@ export type Database = {
           relevance_score?: number | null
           search_config_id?: string
           searchable?: boolean | null
+          searchable_false_reason?: string | null
           source?: string
           tier?: number
           title?: string
@@ -329,6 +332,7 @@ export type Database = {
           relevance_score: number | null
           search_config_id: string
           searchable: boolean | null
+          searchable_false_reason: string | null
           source: string
           tier: number
           title: string
@@ -347,6 +351,7 @@ export type Database = {
           relevance_score?: number | null
           search_config_id: string
           searchable?: boolean | null
+          searchable_false_reason?: string | null
           source: string
           tier?: number
           title: string
@@ -365,6 +370,7 @@ export type Database = {
           relevance_score?: number | null
           search_config_id?: string
           searchable?: boolean | null
+          searchable_false_reason?: string | null
           source?: string
           tier?: number
           title?: string
