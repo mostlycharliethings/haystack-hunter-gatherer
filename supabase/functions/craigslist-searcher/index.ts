@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
     const { data: areas, error: areasError } = await supabase
       .from('craigslist_areas')
       .select('*')
-      .limit(50); // Limit to prevent too many requests
+      .limit(25); // Process 25 areas per run to avoid timeouts
 
     if (areasError) {
       throw new Error(`Failed to fetch Craigslist areas: ${areasError.message}`);
@@ -327,7 +327,7 @@ async function saveListings(supabase: any, listings: CraigslistListing[], search
       price: listing.price,
       url: listing.url,
       location: listing.location,
-      source: 'Craigslist',
+      source: 'craigslist',
       image_url: listing.image_url,
       posted_at: listing.posted_at,
       discovered_at: new Date().toISOString(),
