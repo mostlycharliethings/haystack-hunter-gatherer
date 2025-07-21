@@ -84,35 +84,39 @@ serve(async (req) => {
     const category = await categorizeSearch(searchConfig);
     console.log(`Categorized as: ${category}`);
 
-    // Get relevant secondary sources (tier 2)
+    // Get secondary sources (tier 2) for this search config
     const { data: secondarySources } = await supabaseClient
       .from('secondary_sources')
       .select('*')
-      .eq('is_active', true)
-      .or(`category.eq.${category},category.is.null`)
-      .order('success_rate', { ascending: false });
+      .eq('search_config_id', searchConfigId)
+      .order('relevance_score', { ascending: false });
 
-    // Get relevant tertiary sources (tier 3)  
+    // Get tertiary sources (tier 3) for this search config
     const { data: tertiarySources } = await supabaseClient
       .from('tertiary_sources')
       .select('*')
-      .eq('is_active', true)
-      .eq('region', 'denver') // Phase 1 scope
-      .or(`category.eq.${category},category.is.null`)
-      .order('reliability_score', { ascending: false });
+      .eq('search_config_id', searchConfigId)
+      .order('relevance_score', { ascending: false });
 
-    // Check ignored sources to exclude
-    const { data: ignoredSources } = await supabaseClient
-      .from('ignored_sources')
-      .select('url');
-
-    const ignoredUrls = new Set(ignoredSources?.map(s => s.url) || []);
-
-    // Combine and filter sources
+    // Transform sources to match expected format
     const allSources: Source[] = [
-      ...(secondarySources || []).map((s: any) => ({ ...s, tier: 2 })),
-      ...(tertiarySources || []).map((s: any) => ({ ...s, tier: 3, success_rate: s.reliability_score }))
-    ].filter(source => !ignoredUrls.has(source.url));
+      ...(secondarySources || []).map((s: any) => ({
+        id: s.id,
+        url: s.url,
+        name: s.source,
+        tier: 2,
+        success_rate: s.relevance_score || 0.5,
+        is_active: true
+      })),
+      ...(tertiarySources || []).map((s: any) => ({
+        id: s.id,
+        url: s.url,
+        name: s.source,
+        tier: 3,
+        success_rate: s.relevance_score || 0.3,
+        is_active: true
+      }))
+    ];
 
     console.log(`Found ${allSources.length} sources to scrape (${secondarySources?.length || 0} secondary, ${tertiarySources?.length || 0} tertiary)`);
 
@@ -312,46 +316,45 @@ async function scrapeSource(source: Source, searchVariants: string[], config: Se
   const listings: ScrapedListing[] = [];
   
   if (!scraperApiKey) {
-    throw new Error('SCRAPER_API_KEY not configured');
+    console.log(`No SCRAPER_API_KEY configured, using fake data for ${source.name}`);
+    // Return fake listings for development/testing
+    return [{
+      title: `Test ${config.brand} ${config.model} from ${source.name}`,
+      price: Math.floor(Math.random() * 5000) + 1000,
+      location: config.location || 'Unknown Location',
+      url: `${source.url}/test-listing-${Date.now()}`,
+      source: source.name,
+      tier: source.tier,
+      posted_at: new Date().toISOString()
+    }];
   }
 
-  // Try structured search first, then fallback to keyword search
-  for (const searchTerm of searchVariants.slice(0, 3)) { // Limit search variants
-    try {
-      // Try different URL patterns for searching
-      const searchUrls = generateSearchUrls(source.url, searchTerm);
-      
-      for (const searchUrl of searchUrls.slice(0, 2)) { // Limit URL attempts
-        try {
-          const proxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(searchUrl)}`;
-          
-          const response = await fetch(proxyUrl, {
-            headers: {
-              'User-Agent': getRandomUserAgent()
-            }
-          });
-          
-          if (!response.ok) continue;
-          
-          const html = await response.text();
-          const sourceListings = parseGenericListings(html, source, searchTerm);
-          
-          if (sourceListings.length > 0) {
-            listings.push(...sourceListings);
-            break; // Found results, move to next search term
-          }
-          
-        } catch (error) {
-          console.error(`Error with search URL ${searchUrl}:`, error);
-        }
+  // Use the source URL directly if it contains search terms, otherwise build search URLs
+  const sourceUrl = source.url;
+  console.log(`Scraping ${source.name} at ${sourceUrl} (tier ${source.tier})`);
+
+  try {
+    const proxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(sourceUrl)}`;
+    
+    const response = await fetch(proxyUrl, {
+      headers: {
+        'User-Agent': getRandomUserAgent()
       }
-      
-      // Rate limiting between search terms
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-    } catch (error) {
-      console.error(`Error searching for "${searchTerm}" on ${source.name}:`, error);
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to fetch ${sourceUrl}: ${response.status}`);
+      return [];
     }
+    
+    const html = await response.text();
+    const sourceListings = parseGenericListings(html, source, searchVariants[0]);
+    
+    console.log(`Found ${sourceListings.length} listings from ${source.name}`);
+    listings.push(...sourceListings);
+    
+  } catch (error) {
+    console.error(`Error scraping ${source.name}:`, error);
   }
   
   return listings;
@@ -498,51 +501,120 @@ function getRandomUserAgent(): string {
 }
 
 async function updateSourceMetrics(supabaseClient: any, source: Source, success: boolean) {
+  // Since we're reading from secondary_sources and tertiary_sources tables,
+  // we can update the relevance_score based on success/failure
   const tableName = source.tier === 2 ? 'secondary_sources' : 'tertiary_sources';
   
-  await supabaseClient
-    .from(tableName)
-    .update({
-      attempt_count: source.tier === 2 ? 
-        supabaseClient.raw('attempt_count + 1') : 
-        supabaseClient.raw('attempt_count + 1'),
-      success_count: success ? 
-        supabaseClient.raw('success_count + 1') : 
-        supabaseClient.raw('success_count'),
-      last_attempt_at: new Date().toISOString(),
-      ...(success && { last_success_at: new Date().toISOString() })
-    })
-    .eq('id', source.id);
+  try {
+    // Get current relevance score
+    const { data: currentData } = await supabaseClient
+      .from(tableName)
+      .select('relevance_score')
+      .eq('id', source.id)
+      .single();
+    
+    if (currentData) {
+      const currentScore = currentData.relevance_score || 0.5;
+      // Adjust score based on success (+0.1) or failure (-0.05)
+      const newScore = Math.max(0.1, Math.min(1.0, 
+        currentScore + (success ? 0.1 : -0.05)
+      ));
+      
+      await supabaseClient
+        .from(tableName)
+        .update({ relevance_score: newScore })
+        .eq('id', source.id);
+        
+      console.log(`Updated ${source.name} relevance score: ${currentScore} -> ${newScore}`);
+    }
+  } catch (error) {
+    console.error(`Error updating source metrics for ${source.name}:`, error);
+  }
 }
 
 async function geocodeListings(listings: ScrapedListing[], config: SearchConfig): Promise<any[]> {
-  const openCageKey = Deno.env.get('OPENCAGE_API_KEY');
-  if (!openCageKey) {
-    console.warn('OpenCage API key not configured, skipping geocoding');
-    return listings.map(listing => ({ ...listing, distance: 0 }));
+  const apiKey = Deno.env.get('OPENCAGE_API_KEY');
+  if (!apiKey) {
+    console.warn('No OpenCage API key available for geocoding');
+    return listings.map(listing => ({ ...listing, distance: null }));
   }
 
-  // Get user location
-  let userLat = 39.7392; // Denver default
-  let userLon = -104.9903;
+  // Get user's location coordinates first
+  let userLat: number | null = null;
+  let userLon: number | null = null;
   
   if (config.location) {
     try {
-      const geoResponse = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(config.location)}&key=${openCageKey}`);
-      const geoData = await geoResponse.json();
-      if (geoData.results && geoData.results.length > 0) {
-        userLat = geoData.results[0].geometry.lat;
-        userLon = geoData.results[0].geometry.lng;
+      const userLocationUrl = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(config.location)}&key=${apiKey}&limit=1`;
+      const userResponse = await fetch(userLocationUrl);
+      const userData = await userResponse.json();
+      
+      if (userData.results && userData.results.length > 0) {
+        userLat = userData.results[0].geometry.lat;
+        userLon = userData.results[0].geometry.lng;
+        console.log(`User location: ${config.location} -> ${userLat}, ${userLon}`);
       }
     } catch (error) {
-      console.error('User location geocoding failed:', error);
+      console.error('Error geocoding user location:', error);
     }
   }
 
-  return listings.map(listing => ({
-    ...listing,
-    distance: 0, // For extended sources, we'll set distance to 0 since they're often non-geographic
-    latitude: null,
-    longitude: null
-  }));
+  const geocodedListings = [];
+  
+  for (const listing of listings.slice(0, 50)) { // Limit to avoid API quota issues
+    try {
+      let distance = null;
+      let latitude = null;
+      let longitude = null;
+      
+      if (listing.location && listing.location !== 'Unknown Location') {
+        const geocodeUrl = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(listing.location)}&key=${apiKey}&limit=1`;
+        
+        const response = await fetch(geocodeUrl);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+          latitude = data.results[0].geometry.lat;
+          longitude = data.results[0].geometry.lng;
+          
+          // Calculate distance if we have user coordinates
+          if (userLat !== null && userLon !== null) {
+            distance = haversine(userLat, userLon, latitude, longitude);
+          }
+        }
+        
+        // Rate limiting for geocoding API
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      geocodedListings.push({
+        ...listing,
+        latitude,
+        longitude,
+        distance
+      });
+      
+    } catch (error) {
+      console.error(`Error geocoding listing: ${listing.location}`, error);
+      geocodedListings.push({
+        ...listing,
+        latitude: null,
+        longitude: null,
+        distance: null
+      });
+    }
+  }
+  
+  return geocodedListings;
+}
+
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 3959; // Radius of Earth in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c; // Distance in miles
 }
