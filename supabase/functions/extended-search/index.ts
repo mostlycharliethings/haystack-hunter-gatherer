@@ -338,31 +338,53 @@ async function scrapeSource(source: Source, searchVariants: string[], config: Se
     throw new Error('SCRAPER_API_KEY not configured for web scraping');
   }
 
+  // Check if source is marked as searchable in database
+  const sourceIsSearchable = source.searchable !== false; // Default to true if not set
+  
+  if (!sourceIsSearchable) {
+    const message = `Source ${source.name} is marked as non-searchable - skipping`;
+    console.log(`⏭️  ${message}`);
+    await logSourceFailure(supabaseClient, config.id, source, 'Source marked as non-searchable');
+    return [];
+  }
+
   // DYNAMIC URL BUILDING: Try to generate search URLs using SearchSpec fields
   const baseUrl = source.url;
   let searchUrls: string[] = [];
   
-  // Test if source supports dynamic search URLs
-  const testSearchUrls = generateSearchUrls(baseUrl, searchVariants[0]);
-  let useDynamicUrls = false;
+  // Use hardcoded search URL templates for known sites
+  const knownSearchUrl = getKnownSearchUrl(baseUrl, searchVariants[0]);
+  if (knownSearchUrl) {
+    searchUrls = [knownSearchUrl];
+    console.log(`✅ Using known search pattern for ${source.name}: ${knownSearchUrl}`);
+  } else {
+    // Test if source supports dynamic search URLs
+    const testSearchUrls = generateSearchUrls(baseUrl, searchVariants[0]);
+    let useDynamicUrls = false;
   
-  try {
-    // Test first search URL pattern to see if source supports it
-    const testUrl = testSearchUrls[0];
-    const testProxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(testUrl)}`;
-    const testResponse = await fetch(testProxyUrl, { method: 'HEAD' });
-    
-    if (testResponse.ok) {
-      useDynamicUrls = true;
-      searchUrls = testSearchUrls.slice(0, 3); // Use top 3 patterns
-      console.log(`✅ ${source.name} supports dynamic search URLs`);
-    } else {
-      console.log(`❌ ${source.name} doesn't support dynamic search (HTTP ${testResponse.status}), using base URL`);
-      searchUrls = [baseUrl];
+    try {
+      // Test first search URL pattern to see if source supports it
+      const testUrl = testSearchUrls[0];
+      const testProxyUrl = `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(testUrl)}`;
+      const testResponse = await fetch(testProxyUrl, { 
+        method: 'HEAD',
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+      
+      if (testResponse.ok) {
+        useDynamicUrls = true;
+        searchUrls = testSearchUrls.slice(0, 2); // Use top 2 patterns only
+        console.log(`✅ ${source.name} supports dynamic search URLs`);
+      } else {
+        console.log(`❌ ${source.name} doesn't support dynamic search (HTTP ${testResponse.status}), skipping`);
+        await logSourceFailure(supabaseClient, config.id, source, `Dynamic search test failed: HTTP ${testResponse.status}`);
+        return [];
+      }
+    } catch (error) {
+      console.log(`❌ ${source.name} dynamic URL test failed, skipping:`, error.message);
+      await logSourceFailure(supabaseClient, config.id, source, `Dynamic search test error: ${error.message}`);
+      return [];
     }
-  } catch (error) {
-    console.log(`❌ ${source.name} dynamic URL test failed, using base URL:`, error.message);
-    searchUrls = [baseUrl];
   }
 
   // If source doesn't support search, skip it entirely
@@ -435,32 +457,40 @@ async function logSourceFailure(supabaseClient: any, searchConfigId: string, sou
   }
 }
 
+function getKnownSearchUrl(baseUrl: string, searchTerm: string): string | null {
+  const encodedTerm = encodeURIComponent(searchTerm);
+  
+  // Known working search URL patterns
+  if (baseUrl.includes('reverb.com')) {
+    return `https://reverb.com/marketplace?query=${encodedTerm}`;
+  } else if (baseUrl.includes('bhphotovideo.com')) {
+    return `https://www.bhphotovideo.com/c/search?Ntt=${encodedTerm}`;
+  } else if (baseUrl.includes('adorama.com')) {
+    return `https://www.adorama.com/l/Used-Equipment?searchinfo=${encodedTerm}`;
+  } else if (baseUrl.includes('keh.com')) {
+    return `https://www.keh.com/shop/?s=${encodedTerm}`;
+  } else if (baseUrl.includes('ebay.com')) {
+    return `https://www.ebay.com/sch/i.html?_nkw=${encodedTerm}`;
+  } else if (baseUrl.includes('amazon.com')) {
+    return `https://www.amazon.com/s?k=${encodedTerm}`;
+  }
+  
+  return null; // No known pattern, will use generic testing
+}
+
 function generateSearchUrls(baseUrl: string, searchTerm: string): string[] {
   const encodedTerm = encodeURIComponent(searchTerm);
   const urls = [];
   
-  // Known working patterns for specific sites
-  if (baseUrl.includes('reverb.com')) {
-    urls.push(`${baseUrl.replace(/\/$/, '')}/marketplace?query=${encodedTerm}`);
-  } else if (baseUrl.includes('bhphotovideo.com')) {
-    urls.push(`https://www.bhphotovideo.com/c/search?Ntt=${encodedTerm}`);
-  } else if (baseUrl.includes('adorama.com')) {
-    urls.push(`${baseUrl.replace(/\/$/, '')}/l/Used-Equipment?searchinfo=${encodedTerm}`);
-  } else if (baseUrl.includes('keh.com')) {
-    urls.push(`https://www.keh.com/shop/?s=${encodedTerm}`);
-  } else if (baseUrl.includes('ebay.com')) {
-    urls.push(`https://www.ebay.com/sch/i.html?_nkw=${encodedTerm}`);
-  } else {
-    // Conservative fallback patterns for unknown sites
-    const patterns = [
-      `/search?q=${encodedTerm}`,
-      `/search?query=${encodedTerm}`,
-      `?s=${encodedTerm}`
-    ];
-    
-    for (const pattern of patterns) {
-      urls.push(baseUrl.replace(/\/$/, '') + pattern);
-    }
+  // Conservative fallback patterns for unknown sites
+  const patterns = [
+    `/search?q=${encodedTerm}`,
+    `/search?query=${encodedTerm}`,
+    `?s=${encodedTerm}`
+  ];
+  
+  for (const pattern of patterns) {
+    urls.push(baseUrl.replace(/\/$/, '') + pattern);
   }
   
   return urls;

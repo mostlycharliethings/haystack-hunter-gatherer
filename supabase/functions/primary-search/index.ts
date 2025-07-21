@@ -207,8 +207,8 @@ async function scrapeCraigslist(searchTerms: string[], config: SearchConfig): Pr
         const html = await response.text();
 
         // Debug output:
-        console.log(`--- RAW HTML from Craigslist [${region}] for term "${term}" ---`);
-        console.log(html.slice(0, 1000)); // Show first 1000 chars
+        console.log(`📄 Got ${html.length} chars from Craigslist [${region}] for term "${term}"`);
+        console.log(`📄 Sample HTML: ${html.slice(0, 200)}...`); // Shorter debug output
 
         if (!response.ok) {
           console.error(`Non-OK response for ${region}: ${response.status}`);
@@ -253,8 +253,8 @@ async function scrapeFacebookMarketplace(searchTerms: string[], config: SearchCo
       const html = await response.text();
 
       // Debug output:
-      console.log(`--- RAW HTML from Facebook Marketplace for term "${term}" ---`);
-      console.log(html.slice(0, 1000)); // Show first 1000 chars
+      console.log(`📄 Got ${html.length} chars from Facebook Marketplace for term "${term}"`);
+      console.log(`📄 Sample HTML: ${html.slice(0, 200)}...`); // Shorter debug output
 
       if (!response.ok) {
         console.error(`Non-OK response from Facebook: ${response.status}`);
@@ -295,8 +295,8 @@ async function scrapeEbay(searchTerms: string[], config: SearchConfig): Promise<
       const html = await response.text();
 
       // Debug output:
-      console.log(`--- RAW HTML from eBay for term "${term}" ---`);
-      console.log(html.slice(0, 1000)); // Show first 1000 chars
+      console.log(`📄 Got ${html.length} chars from eBay for term "${term}"`);
+      console.log(`📄 Sample HTML: ${html.slice(0, 200)}...`); // Shorter debug output
 
       if (!response.ok) {
         console.error(`Non-OK response from eBay: ${response.status}`);
