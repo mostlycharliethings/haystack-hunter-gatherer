@@ -39,6 +39,16 @@ interface LogEntry {
   message: string;
 }
 
+interface CronJob {
+  id: string;
+  job_name: string;
+  schedule: string;
+  description: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export const AdminDashboard = () => {
   const { configs } = useSearchConfigs();
   const { listings } = useListings();
@@ -49,9 +59,13 @@ export const AdminDashboard = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(true);
 
+  const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
+  const [isLoadingCronJobs, setIsLoadingCronJobs] = useState(true);
+
   useEffect(() => {
     fetchModuleStatuses();
     fetchActivityLogs();
+    fetchCronJobs();
   }, []);
 
   const fetchModuleStatuses = async () => {
@@ -185,6 +199,57 @@ export const AdminDashboard = () => {
       setLogs([]);
     } finally {
       setIsLoadingLogs(false);
+    }
+  };
+
+  const fetchCronJobs = async () => {
+    setIsLoadingCronJobs(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cron-manager', {
+        body: { action: 'list' }
+      });
+
+      if (error) {
+        console.error('Error fetching cron jobs:', error);
+        setCronJobs([]);
+        return;
+      }
+
+      setCronJobs(data.cronJobs || []);
+    } catch (error) {
+      console.error('Error fetching cron jobs:', error);
+      setCronJobs([]);
+    } finally {
+      setIsLoadingCronJobs(false);
+    }
+  };
+
+  const toggleCronJob = async (jobName: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('cron-manager', {
+        body: { jobName, action: 'toggle' }
+      });
+
+      if (error) {
+        console.error('Error toggling cron job:', error);
+        return;
+      }
+
+      // Update local state
+      setCronJobs(prev => prev.map(job => 
+        job.job_name === jobName 
+          ? { ...job, enabled: data.enabled }
+          : job
+      ));
+
+      console.log(data.message);
+      
+      // Refresh logs to show the action
+      setTimeout(() => {
+        fetchActivityLogs();
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to toggle cron job:', error);
     }
   };
 
@@ -333,6 +398,7 @@ export const AdminDashboard = () => {
       <Tabs defaultValue="modules" className="w-full">
         <TabsList>
           <TabsTrigger value="modules">Module Control</TabsTrigger>
+          <TabsTrigger value="cron-jobs">Cron Jobs</TabsTrigger>
           <TabsTrigger value="logs">Execution Logs</TabsTrigger>
           <TabsTrigger value="api-tests">API Tests</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
@@ -384,6 +450,53 @@ export const AdminDashboard = () => {
                       <Play className="h-4 w-4 mr-2" />
                       Run Now
                     </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="cron-jobs" className="space-y-4">
+          <div className="grid gap-4">
+            {isLoadingCronJobs ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="text-muted-foreground">Loading cron jobs...</div>
+              </div>
+            ) : cronJobs.map((job) => (
+              <Card key={job.id}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <CardTitle className="text-lg">{job.job_name}</CardTitle>
+                      <CardDescription>{job.description}</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant={job.enabled ? "default" : "destructive"}>
+                        {job.enabled ? "Active" : "Disabled"}
+                      </Badge>
+                      <Switch
+                        checked={job.enabled}
+                        onCheckedChange={() => toggleCronJob(job.job_name)}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-4 w-4" />
+                        Schedule: {job.schedule}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Activity className="h-4 w-4" />
+                        Status: {job.enabled ? 'Running' : 'Stopped'}
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Updated: {new Date(job.updated_at).toLocaleString()}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
