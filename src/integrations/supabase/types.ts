@@ -91,6 +91,36 @@ export type Database = {
           },
         ]
       }
+      cron_jobs: {
+        Row: {
+          created_at: string
+          description: string
+          enabled: boolean
+          id: string
+          job_name: string
+          schedule: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          enabled?: boolean
+          id?: string
+          job_name: string
+          schedule: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          job_name?: string
+          schedule?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       listings: {
         Row: {
           discovered_at: string
