@@ -97,7 +97,7 @@ serve(async (req: Request) => {
 
     const refConfigId = searchConfigs[0].id;
 
-    const discoveredSites = await discoverMarketplaceSites(openaiKey);
+    const discoveredSites = await discoverMarketplaceSites(openaiKey, supabase);
     const validatedSites = await validateMarketplaceSites(discoveredSites);
 
     let savedCount = 0;
@@ -164,8 +164,19 @@ serve(async (req: Request) => {
   }
 });
 
-async function discoverMarketplaceSites(apiKey: string): Promise<any[]> {
+async function discoverMarketplaceSites(apiKey: string, supabase: any): Promise<any[]> {
   console.log("🤖 Asking OpenAI to discover marketplace sites...");
+  
+  // Get existing sources to avoid duplicates
+  const existingSources = await getExistingSources(supabase);
+  const existingDomains = existingSources.map(s => normalizeDomain(s)).join(', ');
+  
+  const enhancedPrompt = `${GPT_USER_PROMPT}
+
+AVOID THESE EXISTING SOURCES (we already have them):
+${existingDomains}
+
+Focus on discovering NEW sources not in the above list. Prioritize Colorado-specific, hyperlocal, or niche sites we haven't found yet.`;
   
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -174,11 +185,11 @@ async function discoverMarketplaceSites(apiKey: string): Promise<any[]> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4",
+      model: "gpt-4o-mini",
       temperature: 0.3,
       messages: [
         { role: "system", content: GPT_SYSTEM_PROMPT },
-        { role: "user", content: GPT_USER_PROMPT },
+        { role: "user", content: enhancedPrompt },
       ],
     }),
   });
@@ -326,4 +337,46 @@ function jsonResponse(obj: object, status = 200): Response {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
     status,
   });
+}
+
+// Helper function to get existing sources from both tables
+async function getExistingSources(supabase: any): Promise<string[]> {
+  const sources = new Set<string>();
+  
+  // Get from secondary_sources
+  const { data: secondary } = await supabase
+    .from('secondary_sources')
+    .select('source');
+  
+  if (secondary) {
+    secondary.forEach((s: any) => sources.add(s.source));
+  }
+  
+  // Get from tertiary_sources  
+  const { data: tertiary } = await supabase
+    .from('tertiary_sources')
+    .select('source');
+    
+  if (tertiary) {
+    tertiary.forEach((s: any) => sources.add(s.source));
+  }
+  
+  return Array.from(sources);
+}
+
+// Helper function to normalize domain names for comparison
+function normalizeDomain(source: string): string {
+  try {
+    // If it's a source name, return as-is
+    if (!source.includes('.')) return source;
+    
+    // Extract domain from URL
+    const url = source.startsWith('http') ? source : `https://${source}`;
+    const domain = new URL(url).hostname;
+    
+    // Remove www prefix and return
+    return domain.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return source.toLowerCase();
+  }
 }

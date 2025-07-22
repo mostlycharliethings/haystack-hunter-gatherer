@@ -56,7 +56,7 @@ serve(async (req) => {
     console.log(`Categorized as: ${category}`);
 
     // Get secondary marketplaces using GPT
-    const marketplaces = await findSecondaryMarketplaces(searchConfig, category);
+    const marketplaces = await findSecondaryMarketplaces(searchConfig, category, supabaseClient);
     console.log(`Found ${marketplaces.length} potential marketplaces`);
 
     // Validate each marketplace and save all results
@@ -192,7 +192,7 @@ Return only the category name, nothing else.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'user',
@@ -217,7 +217,7 @@ Return only the category name, nothing else.`;
   }
 }
 
-async function findSecondaryMarketplaces(config: SearchConfig, category: string): Promise<any[]> {
+async function findSecondaryMarketplaces(config: SearchConfig, category: string, supabase: any): Promise<any[]> {
   const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
   if (!openaiApiKey) {
     throw new Error('OpenAI API key not configured');
@@ -225,9 +225,18 @@ async function findSecondaryMarketplaces(config: SearchConfig, category: string)
 
   const searchTerm = `${config.brand} ${config.model} ${config.qualifier || ''} ${config.sub_qualifier || ''}`.trim();
   
+  // Get existing sources to avoid duplicates
+  const existingSources = await getExistingSources(supabase);
+  const existingList = existingSources.join(', ');
+  
   const prompt = `Find 3-5 specialized online marketplaces where people buy and sell "${searchTerm}" items (category: ${category}). 
 
 Do NOT include these common sites: eBay, Craigslist, Facebook Marketplace, Amazon, Walmart, Target.
+
+AVOID THESE EXISTING SOURCES (we already have them):
+${existingList}
+
+Focus on NEW marketplaces not in the existing list above.
 
 For each marketplace, provide:
 1. Website URL (must be a real, working website)
@@ -238,7 +247,7 @@ Format as JSON array:
 [
   {
     "url": "https://example.com",
-    "name": "Site Name",
+    "name": "Site Name", 
     "description": "Brief description"
   }
 ]
@@ -253,7 +262,7 @@ Focus on specialized communities, forums with marketplaces, and niche platforms 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'user',
@@ -285,4 +294,29 @@ Focus on specialized communities, forums with marketplaces, and niche platforms 
     console.error('Error finding secondary marketplaces:', error);
     return [];
   }
+}
+
+// Helper function to get existing sources from both tables
+async function getExistingSources(supabase: any): Promise<string[]> {
+  const sources = new Set<string>();
+  
+  // Get from secondary_sources
+  const { data: secondary } = await supabase
+    .from('secondary_sources')
+    .select('source');
+  
+  if (secondary) {
+    secondary.forEach((s: any) => sources.add(s.source));
+  }
+  
+  // Get from tertiary_sources  
+  const { data: tertiary } = await supabase
+    .from('tertiary_sources')
+    .select('source');
+    
+  if (tertiary) {
+    tertiary.forEach((s: any) => sources.add(s.source));
+  }
+  
+  return Array.from(sources);
 }
