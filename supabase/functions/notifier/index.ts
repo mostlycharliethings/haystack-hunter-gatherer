@@ -321,7 +321,7 @@ async function sendEmail({ to, subject, html }: { to: string, subject: string, h
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Haystack Hunter <noreply@charliescheid.com>',
+        from: 'Haystack Hunter <onboarding@resend.dev>',
         to: [to],
         subject: subject,
         html: html
